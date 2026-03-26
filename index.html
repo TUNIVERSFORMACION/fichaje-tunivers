@@ -664,7 +664,6 @@ function renderSemanaHTML() {
 }
 
 function renderTotalesHTML() {
-  // Calcular totales del mes
   const ahora = new Date();
   const año = ahora.getFullYear();
   const mes = ahora.getMonth();
@@ -672,22 +671,34 @@ function renderTotalesHTML() {
   let diasConActividad = 0;
 
   for (let d = 1; d <= ahora.getDate(); d++) {
-    const fecha = new Date(año, mes, d).toISOString().slice(0,10);
+    // Construir fecha local sin conversión UTC
+    const mm = String(mes+1).padStart(2,"0");
+    const dd = String(d).padStart(2,"0");
+    const fecha = `${año}-${mm}-${dd}`;
     const keyDia = `fichajes_${currentUser?.id}_${fecha}`;
-    const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+
+    // Usar fichajesHoy directamente para el día de hoy (más actualizado)
+    const esHoy = d === ahora.getDate();
+    const fDia = esHoy ? fichajesHoy : JSON.parse(localStorage.getItem(keyDia) || "[]");
+
     if (fDia.length > 0) {
-      diasConActividad++;
-      fDia.forEach(f => {
-        if (f.inicio && f.fin)
-          totalMinsMes += Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
-      });
+      const minsDia = fDia.reduce((s,f) => {
+        if (!f.inicio || !f.fin) return s;
+        return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+      }, 0);
+      if (minsDia > 0) {
+        diasConActividad++;
+        totalMinsMes += minsDia;
+      }
     }
   }
 
-  const hMes = `${Math.floor(totalMinsMes/60)}h ${totalMinsMes%60}min`;
+  const hMes = totalMinsMes > 0
+    ? `${Math.floor(totalMinsMes/60)}h ${totalMinsMes%60}min`
+    : "0h";
   const totalHoy = fichajesHoy.reduce((s,f) => {
-    if (!f.inicio||!f.fin) return s;
-    return s + Math.round((new Date(f.fin)-new Date(f.inicio))/60000);
+    if (!f.inicio || !f.fin) return s;
+    return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
   }, 0);
   const hHoy = totalHoy > 0 ? `${Math.floor(totalHoy/60)}h ${totalHoy%60}min` : "0h";
   const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -703,7 +714,7 @@ function renderTotalesHTML() {
       <div class="total-card">
         <div class="total-label">${meses[mes]}</div>
         <div class="total-val">${hMes}</div>
-        <div class="total-sub">${diasConActividad} días con actividad</div>
+        <div class="total-sub">${diasConActividad} día${diasConActividad!==1?"s":""} con actividad</div>
       </div>
     </div>
   </div>`;
