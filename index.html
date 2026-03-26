@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Fichaje — Tunivers Formación</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.10.0/lib/msal-browser.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --card: #ffffff;
+    --text: #1a1a18;
+    --text2: #6b6b67;
+    --text3: #a0a09b;
+    --border: rgba(0,0,0,0.09);
+    --border2: rgba(0,0,0,0.16);
+    --accent: #2C3E50;
+    --accent-light: #e8edf2;
+    --green: #0F6E56;
+    --green-bg: #eaf3de;
+    --red: #993C1D;
+    --red-bg: #fcebeb;
+    --amber: #854f0b;
+    --amber-bg: #faeeda;
+    --blue: #185fa5;
+    --blue-bg: #e6f1fb;
+    --radius: 12px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* LOGIN */
+  .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; }
+  .login-logo { width: 64px; height: 64px; background: var(--accent); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; }
+  .login-logo svg { width: 32px; height: 32px; fill: white; }
+  .login-card { background: var(--card); border-radius: var(--radius); padding: 2rem; width: 100%; max-width: 360px; box-shadow: var(--shadow-lg); border: 0.5px solid var(--border); text-align: center; }
+  .login-card h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .login-card p { font-size: 13px; color: var(--text2); margin-bottom: 1.5rem; line-height: 1.5; }
+  .btn-ms { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 12px; background: #0078d4; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; transition: background 0.15s; }
+  .btn-ms:hover { background: #006cbd; }
+  .btn-ms svg { width: 20px; height: 20px; }
+
+  /* APP */
+  .app { display: none; flex-direction: column; min-height: 100vh; max-width: 480px; margin: 0 auto; }
+
+  /* TOPBAR */
+  .topbar { background: var(--accent); color: white; padding: 0 1rem; height: 56px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 50; }
+  .topbar-avatar { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; overflow: hidden; }
+  .topbar-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .topbar-info { flex: 1; min-width: 0; }
+  .topbar-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-date { font-size: 10px; color: rgba(255,255,255,0.65); }
+  .btn-logout { background: rgba(255,255,255,0.15); border: none; color: white; padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .btn-logout:hover { background: rgba(255,255,255,0.25); }
+
+  /* ESTADO ACTUAL */
+  .estado-card { margin: 1rem; background: var(--card); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); border: 0.5px solid var(--border); }
+  .estado-header { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; }
+  .estado-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+  .estado-dot.activo { background: var(--green); box-shadow: 0 0 0 3px rgba(15,110,86,0.2); }
+  .estado-dot.proximo { background: var(--amber); box-shadow: 0 0 0 3px rgba(133,79,11,0.2); }
+  .estado-titulo { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+  .evento-activo { background: var(--green-bg); border-radius: 10px; padding: 14px; border: 0.5px solid rgba(15,110,86,0.2); }
+  .evento-activo .ev-tipo { font-size: 10px; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .evento-activo .ev-titulo { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; line-height: 1.3; }
+  .evento-activo .ev-hora { font-size: 13px; color: var(--green); font-weight: 500; }
+  .evento-activo .ev-lugar { font-size: 12px; color: var(--text2); margin-top: 3px; }
+  .sin-evento { text-align: center; padding: 1rem 0; color: var(--text2); font-size: 13px; }
+
+  /* FICHAJE DEL DÍA */
+  .section { margin: 0 1rem 1rem; }
+  .section-title { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; padding: 0 2px; }
+  .fichaje-item { background: var(--card); border-radius: 10px; padding: 12px 14px; border: 0.5px solid var(--border); margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+  .fichaje-item .fi-color { width: 4px; border-radius: 2px; align-self: stretch; flex-shrink: 0; min-height: 36px; }
+  .fichaje-item .fi-info { flex: 1; min-width: 0; }
+  .fichaje-item .fi-titulo { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fichaje-item .fi-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .fichaje-item .fi-badge { font-size: 10px; padding: 3px 8px; border-radius: 20px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .badge-ok { background: var(--green-bg); color: var(--green); }
+  .badge-pendiente { background: var(--amber-bg); color: var(--amber); }
+  .badge-ausente { background: var(--red-bg); color: var(--red); }
+  .badge-futuro { background: var(--blue-bg); color: var(--blue); }
+
+  /* PRÓXIMOS EVENTOS */
+  .proximo-item { background: var(--card); border-radius: 10px; padding: 12px 14px; border: 0.5px solid var(--border); margin-bottom: 6px; display: flex; gap: 12px; align-items: center; }
+  .pr-hora { font-size: 12px; font-weight: 700; color: var(--text2); min-width: 44px; text-align: center; }
+  .pr-info { flex: 1; min-width: 0; }
+  .pr-titulo { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pr-meta { font-size: 11px; color: var(--text2); margin-top: 1px; }
+  .pr-tipo { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; }
+
+  /* RESUMEN SEMANA */
+  .semana-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 6px; }
+  .dia-pill { background: var(--card); border-radius: 8px; padding: 8px 4px; text-align: center; border: 0.5px solid var(--border); }
+  .dia-pill.hoy { border-color: var(--accent); background: var(--accent-light); }
+  .dia-pill .dp-dia { font-size: 9px; color: var(--text2); text-transform: uppercase; font-weight: 600; }
+  .dia-pill .dp-num { font-size: 15px; font-weight: 700; margin: 2px 0; }
+  .dia-pill .dp-h { font-size: 9px; color: var(--text2); }
+  .dia-pill.hoy .dp-dia, .dia-pill.hoy .dp-num { color: var(--accent); }
+
+  /* TOTALES */
+  .totales-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .total-card { background: var(--card); border-radius: 10px; padding: 12px; border: 0.5px solid var(--border); }
+  .total-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .total-val { font-size: 22px; font-weight: 700; }
+  .total-sub { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+  /* LOADING */
+  .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; gap: 12px; color: var(--text2); font-size: 13px; }
+  .spinner { width: 28px; height: 28px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: var(--accent); color: white; padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 500; z-index: 200; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+
+  /* ALERTA */
+  .alerta { border-radius: 10px; padding: 10px 14px; font-size: 12px; margin-bottom: 8px; display: flex; gap: 8px; }
+  .al-warn { background: var(--amber-bg); color: var(--amber); border: 0.5px solid #ef9f27; }
+  .al-info { background: var(--blue-bg); color: var(--blue); border: 0.5px solid #85b7eb; }
+  .al-ok { background: var(--green-bg); color: var(--green); border: 0.5px solid #97c459; }
+
+  /* EXPORTAR */
+  .export-bar { margin: 0 1rem 1.5rem; }
+  .btn-export { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-export:hover { background: #3d5166; }
+  .btn-export-sec { width: 100%; padding: 10px; background: var(--card); color: var(--text); border: 0.5px solid var(--border2); border-radius: 10px; font-size: 13px; cursor: pointer; font-family: inherit; margin-top: 6px; }
+
+  /* EMPTY */
+  .empty { text-align: center; padding: 2rem 1rem; color: var(--text3); font-size: 13px; }
+
+  @media (min-width: 480px) {
+    .app { border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-screen" id="login-screen">
+  <div class="login-logo">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+  </div>
+  <div class="login-card">
+    <h1>Tunivers Formación</h1>
+    <p>Sistema de fichaje automático.<br/>Inicia sesión con tu cuenta corporativa de Microsoft 365.</p>
+    <button class="btn-ms" onclick="iniciarSesion()">
+      <svg viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+      Iniciar sesión con Microsoft
+    </button>
+    <p style="font-size:11px;color:var(--text3);margin-top:1rem">Solo se accede a tu calendario. Ningún dato sale de tu organización.</p>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+
+  <div class="topbar">
+    <div class="topbar-avatar" id="topbar-avatar">?</div>
+    <div class="topbar-info">
+      <div class="topbar-name" id="topbar-name">Cargando...</div>
+      <div class="topbar-date" id="topbar-date"></div>
+    </div>
+    <button class="btn-logout" onclick="cerrarSesion()">Salir</button>
+  </div>
+
+  <div id="app-content">
+    <div class="loading"><div class="spinner"></div>Cargando tu agenda...</div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIGURACIÓN AZURE ──────────────────────────────
+const MSAL_CONFIG = {
+  auth: {
+    clientId: "6566aa81-4081-48a1-bbd0-92cfe6e755c0",
+    authority: "https://login.microsoftonline.com/2a8fa13e-07b5-4505-b339-210526ef643d",
+    redirectUri: window.location.href.split("?")[0].split("#")[0],
+  },
+  cache: { cacheLocation: "sessionStorage" }
+};
+const SCOPES = ["Calendars.Read", "User.Read", "Files.ReadWrite"];
+const SCOPES_ADMIN = ["Calendars.Read", "User.Read", "Files.ReadWrite", "Files.Read.All", "User.ReadBasic.All"];
+const msalInstance = new msal.PublicClientApplication(MSAL_CONFIG);
+
+// ── OneDrive ──────────────────────────────────────────
+// Carpeta destino en el OneDrive del usuario admin (centrofp)
+// Cada profesor escribe en /FICHAJES OUTLOOK/[nombre].json
+// dentro de su propio OneDrive — el admin los lee todos vía Files.Read.All
+const ONEDRIVE_FOLDER = "FICHAJES OUTLOOK";
+
+// ── ESTADO ────────────────────────────────────────────
+let currentUser = null;
+let accessToken = null;
+let eventosHoy = [];
+let fichajesHoy = [];  // {eventoId, titulo, inicio, fin, tipo, fichado, horaFichaje}
+let timerInterval = null;
+
+// ── COLORES TIPO ──────────────────────────────────────
+const TIPO_CONFIG = {
+  "Clase presencial":   { color: "#2C3E50", bg: "#e8edf2", label: "Clase" },
+  "Clase online":       { color: "#185fa5", bg: "#e6f1fb", label: "Online" },
+  "Tutoría":            { color: "#0F6E56", bg: "#eaf3de", label: "Tutoría" },
+  "Reunión":            { color: "#784212", bg: "#faeeda", label: "Reunión" },
+  "Guardia":            { color: "#6c3483", bg: "#f4ecf7", label: "Guardia" },
+  "Sustitución":        { color: "#922b21", bg: "#fadbd8", label: "Sust." },
+  "Preparación":        { color: "#555555", bg: "#f5f5f5", label: "Prep." },
+  "Otro":               { color: "#888888", bg: "#f5f5f5", label: "Otro" },
+};
+
+function detectarTipo(titulo, categorias) {
+  const t = (titulo || "").toLowerCase();
+  const c = (categorias || []).join(" ").toLowerCase();
+  const txt = t + " " + c;
+  if (txt.includes("online") || txt.includes("zoom") || txt.includes("teams")) return "Clase online";
+  if (txt.includes("tutori") || txt.includes("tutoría")) return "Tutoría";
+  if (txt.includes("reunión") || txt.includes("reunion") || txt.includes("claustro") || txt.includes("coordinaci")) return "Reunión";
+  if (txt.includes("guardia")) return "Guardia";
+  if (txt.includes("sustit")) return "Sustitución";
+  if (txt.includes("preparaci") || txt.includes("corrección") || txt.includes("correccio")) return "Preparación";
+  if (txt.includes("clase") || txt.includes("módulo") || txt.includes("modulo") || txt.includes("daw") || txt.includes("fp")) return "Clase presencial";
+  return "Clase presencial";
+}
+
+// ── MSAL ──────────────────────────────────────────────
+async function iniciarSesion() {
+  try {
+    await msalInstance.initialize();
+    const resp = await msalInstance.loginPopup({ scopes: SCOPES });
+    msalInstance.setActiveAccount(resp.account);
+    await cargarApp();
+  } catch(e) {
+    console.error(e);
+    showToast("Error al iniciar sesión. Inténtalo de nuevo.");
+  }
+}
+
+async function getToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) return null;
+  try {
+    const resp = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account });
+    return resp.accessToken;
+  } catch(e) {
+    const resp = await msalInstance.acquireTokenPopup({ scopes: SCOPES });
+    return resp.accessToken;
+  }
+}
+
+async function cerrarSesion() {
+  if (timerInterval) clearInterval(timerInterval);
+  await msalInstance.logoutPopup();
+  document.getElementById("login-screen").style.display = "flex";
+  document.getElementById("app").style.display = "none";
+}
+
+// ── GRAPH API ─────────────────────────────────────────
+async function graphGet(url) {
+  const token = await getToken();
+  const resp = await fetch("https://graph.microsoft.com/v1.0" + url, {
+    headers: { Authorization: "Bearer " + token }
+  });
+  if (!resp.ok) throw new Error("Graph error: " + resp.status);
+  return resp.json();
+}
+
+async function cargarApp() {
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+  document.getElementById("app-content").innerHTML = `<div class="loading"><div class="spinner"></div>Cargando tu agenda...</div>`;
+
+  try {
+    // Perfil usuario
+    const perfil = await graphGet("/me?$select=displayName,mail,jobTitle,id");
+    currentUser = perfil;
+
+    // Avatar (puede fallar)
+    try {
+      const avatarResp = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
+        headers: { Authorization: "Bearer " + (await getToken()) }
+      });
+      if (avatarResp.ok) {
+        const blob = await avatarResp.blob();
+        const url = URL.createObjectURL(blob);
+        document.getElementById("topbar-avatar").innerHTML = `<img src="${url}"/>`;
+      } else {
+        document.getElementById("topbar-avatar").textContent = perfil.displayName?.[0] || "?";
+      }
+    } catch { document.getElementById("topbar-avatar").textContent = perfil.displayName?.[0] || "?"; }
+
+    document.getElementById("topbar-name").textContent = perfil.displayName || perfil.mail;
+    actualizarFechaTopbar();
+
+    // Eventos hoy
+    const hoy = new Date();
+    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 0, 0, 0).toISOString();
+    const finHoy    = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59).toISOString();
+
+    const evData = await graphGet(
+      `/me/calendarView?startDateTime=${inicioHoy}&endDateTime=${finHoy}` +
+      `&$select=id,subject,start,end,location,categories,isAllDay,isCancelled` +
+      `&$orderby=start/dateTime&$top=50`
+    );
+
+    eventosHoy = (evData.value || []).filter(e => !e.isAllDay && !e.isCancelled);
+
+    // Cargar fichajes guardados del día
+    const keyHoy = `fichajes_${currentUser.id}_${hoy.toISOString().slice(0,10)}`;
+    fichajesHoy = JSON.parse(localStorage.getItem(keyHoy) || "[]");
+
+    // Fichar automáticamente eventos que han finalizado y no están fichados
+    fichajeAutomatico();
+
+    // Renderizar
+    renderApp();
+
+    // Timer cada minuto
+    timerInterval = setInterval(() => {
+      actualizarFechaTopbar();
+      fichajeAutomatico();
+      renderEstadoActual();
+    }, 60000);
+
+  } catch(e) {
+    console.error(e);
+    document.getElementById("app-content").innerHTML = `
+      <div class="loading">
+        <div style="font-size:13px;color:var(--red)">Error al cargar la agenda.<br/>Comprueba tu conexión e inténtalo de nuevo.</div>
+        <button class="btn-ms" onclick="cargarApp()" style="margin-top:12px;max-width:200px">Reintentar</button>
+      </div>`;
+  }
+}
+
+function actualizarFechaTopbar() {
+  const ahora = new Date();
+  const dias = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  document.getElementById("topbar-date").textContent =
+    `${dias[ahora.getDay()]}, ${ahora.getDate()} de ${meses[ahora.getMonth()]} · ${ahora.getHours().toString().padStart(2,"0")}:${ahora.getMinutes().toString().padStart(2,"0")}`;
+}
+
+// ── FICHAJE AUTOMÁTICO ────────────────────────────────
+async function fichajeAutomatico() {
+  const ahora = new Date();
+  const keyHoy = `fichajes_${currentUser?.id}_${ahora.toISOString().slice(0,10)}`;
+  let cambios = false;
+
+  eventosHoy.forEach(ev => {
+    const inicio = new Date(ev.start.dateTime || ev.start.date);
+    const fin    = new Date(ev.end.dateTime   || ev.end.date);
+    const yaFichado = fichajesHoy.find(f => f.eventoId === ev.id);
+
+    // Si el evento ya terminó y no está fichado → ficharlo
+    if (fin <= ahora && !yaFichado) {
+      const tipo = detectarTipo(ev.subject, ev.categories);
+      fichajesHoy.push({
+        eventoId:    ev.id,
+        titulo:      ev.subject,
+        inicio:      ev.start.dateTime,
+        fin:         ev.end.dateTime,
+        tipo,
+        lugar:       ev.location?.displayName || "",
+        fichado:     true,
+        horaFichaje: new Date().toISOString(),
+        automatico:  true,
+      });
+      cambios = true;
+    }
+  });
+
+  if (cambios) {
+    localStorage.setItem(keyHoy, JSON.stringify(fichajesHoy));
+    await guardarParaExportar();
+    renderApp(); // refrescar UI con nuevos fichajes
+  }
+}
+
+async function guardarParaExportar() {
+  // 1. Guardar en localStorage como respaldo local
+  const exportKey = `export_fichajes_${currentUser?.id}`;
+  const hoy = new Date().toISOString().slice(0,10);
+  let allFichajes = JSON.parse(localStorage.getItem(exportKey) || "{}");
+  allFichajes[hoy] = fichajesHoy;
+  localStorage.setItem(exportKey, JSON.stringify(allFichajes));
+
+  // 2. Guardar en OneDrive del profesor — carpeta "FICHAJES OUTLOOK"
+  try {
+    const ahora = new Date();
+    const mes = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,"0")}`;
+    const nombreArchivo = `${(currentUser.displayName||"profesor").replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s]/g,"_")}_${mes}.json`;
+
+    // Construir payload completo del mes
+    const payload = construirPayloadMes(ahora.getFullYear(), ahora.getMonth());
+    const contenido = JSON.stringify(payload, null, 2);
+
+    // Subir a OneDrive: PUT /me/drive/root:/{carpeta}/{archivo}:/content
+    const token = await getToken();
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(ONEDRIVE_FOLDER)}/${encodeURIComponent(nombreArchivo)}:/content`;
+    const resp = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: contenido
+    });
+
+    if (resp.ok) {
+      console.log("✓ Fichaje guardado en OneDrive:", nombreArchivo);
+      mostrarBadgeSync(true);
+    } else {
+      const err = await resp.json().catch(()=>({}));
+      // Si la carpeta no existe, crearla e intentar de nuevo
+      if (err?.error?.code === "itemNotFound") {
+        await crearCarpetaSiNoExiste();
+        await guardarParaExportar(); // reintentar
+      } else {
+        console.warn("OneDrive error:", err);
+        mostrarBadgeSync(false);
+      }
+    }
+  } catch(e) {
+    console.warn("No se pudo guardar en OneDrive:", e);
+    mostrarBadgeSync(false);
+  }
+}
+
+async function crearCarpetaSiNoExiste() {
+  try {
+    const token = await getToken();
+    await fetch("https://graph.microsoft.com/v1.0/me/drive/root/children", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: ONEDRIVE_FOLDER,
+        folder: {},
+        "@microsoft.graph.conflictBehavior": "rename"
+      })
+    });
+  } catch(e) { console.warn("No se pudo crear la carpeta:", e); }
+}
+
+function construirPayloadMes(año, mes) {
+  const diasMes = new Date(año, mes+1, 0).getDate();
+  const dias = [];
+  for (let d = 1; d <= diasMes; d++) {
+    const fecha = new Date(año, mes, d).toISOString().slice(0,10);
+    const keyDia = `fichajes_${currentUser?.id}_${fecha}`;
+    const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+    if (fDia.length > 0) {
+      const slots = fDia.slice(0,4).map(f => [
+        f.inicio ? new Date(f.inicio).toTimeString().slice(0,5) : "",
+        f.fin    ? new Date(f.fin).toTimeString().slice(0,5)    : "",
+      ]);
+      while (slots.length < 4) slots.push(["",""]);
+      dias.push({ fecha, tipo: "T", slots, eventos: fDia.map(f=>({titulo:f.titulo,tipo:f.tipo,inicio:f.inicio,fin:f.fin})) });
+    }
+  }
+  return {
+    trabajador: currentUser.displayName,
+    email:      currentUser.mail,
+    userId:     currentUser.id,
+    mes,
+    year:       año,
+    generado:   new Date().toISOString(),
+    dias,
+  };
+}
+
+function mostrarBadgeSync(ok) {
+  const el = document.getElementById("sync-badge");
+  if (!el) return;
+  el.textContent = ok ? "✓ Sincronizado con OneDrive" : "⚠ Sin conexión OneDrive";
+  el.style.background = ok ? "var(--green-bg)" : "var(--amber-bg)";
+  el.style.color = ok ? "var(--green)" : "var(--amber)";
+  el.style.display = "block";
+}
+
+// ── RENDER PRINCIPAL ──────────────────────────────────
+function renderApp() {
+  const ahora = new Date();
+  const html = `
+    ${renderEstadoHTML()}
+    ${renderFichajesHoyHTML()}
+    ${renderProximosHTML()}
+    ${renderSemanaHTML()}
+    ${renderTotalesHTML()}
+    ${renderExportarHTML()}
+  `;
+  document.getElementById("app-content").innerHTML = html;
+}
+
+function renderEstadoActual() {
+  const el = document.getElementById("estado-section");
+  if (el) el.outerHTML = renderEstadoHTML();
+}
+
+function renderEstadoHTML() {
+  const ahora = new Date();
+  const eventoActivo = eventosHoy.find(ev => {
+    const ini = new Date(ev.start.dateTime || ev.start.date);
+    const fin = new Date(ev.end.dateTime   || ev.end.date);
+    return ini <= ahora && ahora < fin;
+  });
+  const eventoProximo = !eventoActivo && eventosHoy.find(ev => {
+    const ini = new Date(ev.start.dateTime || ev.start.date);
+    return ini > ahora && ini - ahora < 30*60*1000;
+  });
+
+  let contenido = "";
+  if (eventoActivo) {
+    const tipo = detectarTipo(eventoActivo.subject, eventoActivo.categories);
+    const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
+    const ini = fmtHora(eventoActivo.start.dateTime);
+    const fin = fmtHora(eventoActivo.end.dateTime);
+    const lugar = eventoActivo.location?.displayName;
+    contenido = `
+      <div class="evento-activo">
+        <div class="ev-tipo">${tc.label} · EN CURSO</div>
+        <div class="ev-titulo">${eventoActivo.subject}</div>
+        <div class="ev-hora">${ini} → ${fin}</div>
+        ${lugar ? `<div class="ev-lugar">📍 ${lugar}</div>` : ""}
+      </div>`;
+  } else if (eventoProximo) {
+    const mins = Math.round((new Date(eventoProximo.start.dateTime) - ahora) / 60000);
+    const tipo = detectarTipo(eventoProximo.subject, eventoProximo.categories);
+    const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
+    contenido = `
+      <div class="alerta al-warn">
+        <span>⏰</span>
+        <span><strong>${eventoProximo.subject}</strong> empieza en ${mins} minuto${mins!==1?"s":""}.</span>
+      </div>`;
+  } else {
+    const pendientes = eventosHoy.filter(ev => new Date(ev.start.dateTime) > ahora);
+    contenido = pendientes.length > 0
+      ? `<div class="sin-evento">Sin actividad ahora mismo.<br/><span style="font-size:11px;color:var(--text3)">${pendientes.length} evento${pendientes.length!==1?"s":""} más hoy.</span></div>`
+      : `<div class="sin-evento">No hay más actividad programada hoy.</div>`;
+  }
+
+  const dotClass = eventoActivo ? "activo" : eventoProximo ? "proximo" : "";
+  const tituloEstado = eventoActivo ? "Ahora mismo" : eventoProximo ? "Próximamente" : "Estado actual";
+
+  return `<div class="estado-card" id="estado-section">
+    <div class="estado-header">
+      <div class="estado-dot ${dotClass}"></div>
+      <div class="estado-titulo">${tituloEstado}</div>
+    </div>
+    ${contenido}
+  </div>`;
+}
+
+function renderFichajesHoyHTML() {
+  if (eventosHoy.length === 0) return `<div class="section"><div class="empty">No hay eventos en tu calendario hoy.</div></div>`;
+
+  const ahora = new Date();
+  let items = "";
+  eventosHoy.forEach(ev => {
+    const ini = new Date(ev.start.dateTime || ev.start.date);
+    const fin = new Date(ev.end.dateTime   || ev.end.date);
+    const tipo = detectarTipo(ev.subject, ev.categories);
+    const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
+    const fichaje = fichajesHoy.find(f => f.eventoId === ev.id);
+    const lugar = ev.location?.displayName;
+
+    let badge, badgeClass;
+    if (fichaje) {
+      badge = "✓ Fichado";
+      badgeClass = "badge-ok";
+    } else if (fin < ahora) {
+      badge = "Sin fichar";
+      badgeClass = "badge-ausente";
+    } else if (ini <= ahora) {
+      badge = "En curso";
+      badgeClass = "badge-pendiente";
+    } else {
+      badge = fmtHora(ev.start.dateTime);
+      badgeClass = "badge-futuro";
+    }
+
+    const mins = Math.round((fin - ini) / 60000);
+    const duracion = mins >= 60 ? `${Math.floor(mins/60)}h${mins%60>0?` ${mins%60}min`:""}` : `${mins}min`;
+
+    items += `<div class="fichaje-item">
+      <div class="fi-color" style="background:${tc.color}"></div>
+      <div class="fi-info">
+        <div class="fi-titulo">${ev.subject}</div>
+        <div class="fi-meta">${fmtHora(ev.start.dateTime)}–${fmtHora(ev.end.dateTime)} · ${duracion}${lugar ? " · " + lugar : ""}</div>
+      </div>
+      <span class="fi-badge ${badgeClass}">${badge}</span>
+    </div>`;
+  });
+
+  const total = fichajesHoy.length;
+  const totalEv = eventosHoy.length;
+  return `<div class="section">
+    <div class="section-title">Registro de hoy · ${total}/${totalEv} eventos</div>
+    ${items}
+  </div>`;
+}
+
+function renderProximosHTML() {
+  const ahora = new Date();
+  const proximos = eventosHoy.filter(ev => new Date(ev.start.dateTime) > ahora).slice(0, 3);
+  if (proximos.length === 0) return "";
+
+  let items = proximos.map(ev => {
+    const tipo = detectarTipo(ev.subject, ev.categories);
+    const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
+    const mins = Math.round((new Date(ev.end.dateTime) - new Date(ev.start.dateTime)) / 60000);
+    const dur = mins >= 60 ? `${Math.floor(mins/60)}h${mins%60>0?` ${mins%60}min`:""}` : `${mins}min`;
+    return `<div class="proximo-item">
+      <div class="pr-hora">${fmtHora(ev.start.dateTime)}</div>
+      <div class="pr-info">
+        <div class="pr-titulo">${ev.subject}</div>
+        <div class="pr-meta">${dur}${ev.location?.displayName ? " · " + ev.location.displayName : ""}</div>
+      </div>
+      <span class="pr-tipo" style="background:${tc.bg};color:${tc.color}">${tc.label}</span>
+    </div>`;
+  }).join("");
+
+  return `<div class="section">
+    <div class="section-title">Próximos eventos</div>
+    ${items}
+  </div>`;
+}
+
+function renderSemanaHTML() {
+  const ahora = new Date();
+  const diasSemana = ["Lu","Ma","Mi","Ju","Vi"];
+  // Calcular lunes de esta semana
+  const lunes = new Date(ahora);
+  const dw = ahora.getDay() === 0 ? 6 : ahora.getDay() - 1;
+  lunes.setDate(lunes.getDate() - dw);
+
+  let pills = "";
+  for (let i = 0; i < 5; i++) {
+    const dia = new Date(lunes);
+    dia.setDate(lunes.getDate() + i);
+    const esHoy = dia.toDateString() === ahora.toDateString();
+    const keyDia = `fichajes_${currentUser?.id}_${dia.toISOString().slice(0,10)}`;
+    const fichajesDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+    const mins = fichajesDia.reduce((s, f) => {
+      if (!f.inicio || !f.fin) return s;
+      return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+    }, 0);
+    const hStr = mins > 0 ? `${Math.floor(mins/60)}h${mins%60>0?`${mins%60}`:""}` : "—";
+
+    pills += `<div class="dia-pill ${esHoy?"hoy":""}">
+      <div class="dp-dia">${diasSemana[i]}</div>
+      <div class="dp-num">${dia.getDate()}</div>
+      <div class="dp-h">${hStr}</div>
+    </div>`;
+  }
+
+  return `<div class="section">
+    <div class="section-title">Esta semana</div>
+    <div class="semana-grid">${pills}</div>
+  </div>`;
+}
+
+function renderTotalesHTML() {
+  // Calcular totales del mes
+  const ahora = new Date();
+  const año = ahora.getFullYear();
+  const mes = ahora.getMonth();
+  let totalMinsMes = 0;
+  let diasConActividad = 0;
+
+  for (let d = 1; d <= ahora.getDate(); d++) {
+    const fecha = new Date(año, mes, d).toISOString().slice(0,10);
+    const keyDia = `fichajes_${currentUser?.id}_${fecha}`;
+    const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+    if (fDia.length > 0) {
+      diasConActividad++;
+      fDia.forEach(f => {
+        if (f.inicio && f.fin)
+          totalMinsMes += Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+      });
+    }
+  }
+
+  const hMes = `${Math.floor(totalMinsMes/60)}h ${totalMinsMes%60}min`;
+  const totalHoy = fichajesHoy.reduce((s,f) => {
+    if (!f.inicio||!f.fin) return s;
+    return s + Math.round((new Date(f.fin)-new Date(f.inicio))/60000);
+  }, 0);
+  const hHoy = totalHoy > 0 ? `${Math.floor(totalHoy/60)}h ${totalHoy%60}min` : "0h";
+  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+  return `<div class="section">
+    <div class="section-title">Totales</div>
+    <div class="totales-grid">
+      <div class="total-card">
+        <div class="total-label">Hoy</div>
+        <div class="total-val">${hHoy}</div>
+        <div class="total-sub">${fichajesHoy.length} evento${fichajesHoy.length!==1?"s":""}</div>
+      </div>
+      <div class="total-card">
+        <div class="total-label">${meses[mes]}</div>
+        <div class="total-val">${hMes}</div>
+        <div class="total-sub">${diasConActividad} días con actividad</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderExportarHTML() {
+  return `<div class="export-bar">
+    <div id="sync-badge" style="display:none;font-size:11px;font-weight:600;padding:6px 12px;border-radius:20px;text-align:center;margin-bottom:8px"></div>
+    <button class="btn-export" onclick="sincronizarAhora()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Sincronizar con OneDrive ahora
+    </button>
+    <button class="btn-export-sec" onclick="exportarPDF()">Imprimir / guardar PDF del mes</button>
+  </div>`;
+}
+
+async function sincronizarAhora() {
+  showToast("Sincronizando con OneDrive...");
+  await guardarParaExportar();
+  showToast("Fichajes sincronizados con OneDrive.");
+}
+
+// ── EXPORTAR ──────────────────────────────────────────
+function exportarJSON() {
+  if (!currentUser) return;
+  const ahora = new Date();
+  const mes = ahora.getMonth();
+  const año = ahora.getFullYear();
+  const diasMes = new Date(año, mes+1, 0).getDate();
+  const dias = [];
+
+  for (let d = 1; d <= diasMes; d++) {
+    const fecha = new Date(año, mes, d).toISOString().slice(0,10);
+    const keyDia = `fichajes_${currentUser.id}_${fecha}`;
+    const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+
+    if (fDia.length > 0) {
+      // Agrupar slots por día (hasta 4 franjas como el sistema de gestión)
+      const slots = fDia.slice(0,4).map(f => [
+        f.inicio ? new Date(f.inicio).toTimeString().slice(0,5) : "",
+        f.fin    ? new Date(f.fin).toTimeString().slice(0,5)    : "",
+      ]);
+      while (slots.length < 4) slots.push(["",""]);
+      dias.push({ fecha, tipo: "T", slots });
+    }
+  }
+
+  const exportData = {
+    trabajador:   currentUser.displayName,
+    email:        currentUser.mail,
+    mes:          mes,
+    year:         año,
+    generado:     new Date().toISOString(),
+    dias,
+  };
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  a.href = URL.createObjectURL(blob);
+  a.download = `fichaje_${(currentUser.displayName||"profesor").replace(/\s+/g,"_")}_${meses[mes]}_${año}.json`;
+  a.click();
+  showToast("Fichajes exportados correctamente.");
+}
+
+function exportarPDF() {
+  if (!currentUser) return;
+  const ahora = new Date();
+  const mes = ahora.getMonth();
+  const año = ahora.getFullYear();
+  const diasMes = new Date(año, mes+1, 0).getDate();
+  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const dsShort = ["do","lu","ma","mi","ju","vi","sá"];
+
+  let filas = "";
+  let totalMins = 0;
+
+  for (let d = 1; d <= diasMes; d++) {
+    const fecha = new Date(año, mes, d);
+    const fechaStr = fecha.toISOString().slice(0,10);
+    const keyDia = `fichajes_${currentUser.id}_${fechaStr}`;
+    const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+    const dw = fecha.getDay();
+    const isWk = dw === 0 || dw === 6;
+    const bg = isWk ? "#f5f5f5" : "white";
+
+    let mins = 0;
+    let eventosCell = "";
+    if (fDia.length > 0) {
+      fDia.forEach(f => {
+        const ini = f.inicio ? new Date(f.inicio).toTimeString().slice(0,5) : "";
+        const fin = f.fin    ? new Date(f.fin).toTimeString().slice(0,5)    : "";
+        if (f.inicio && f.fin)
+          mins += Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+        eventosCell += `<div style="font-size:8px">${ini}–${fin} ${f.titulo||""}</div>`;
+      });
+    }
+    totalMins += mins;
+    const hStr = mins > 0 ? `${Math.floor(mins/60)}:${String(mins%60).padStart(2,"0")}` : "";
+
+    filas += `<tr style="background:${bg}">
+      <td>${dsShort[dw]} ${String(d).padStart(2,"0")}/${String(mes+1).padStart(2,"0")}</td>
+      <td style="font-size:9px;text-align:left">${eventosCell}</td>
+      <td style="text-align:center;font-weight:bold">${hStr}</td>
+    </tr>`;
+  }
+
+  const totalH = `${Math.floor(totalMins/60)}h ${totalMins%60}min`;
+  const win = window.open("","_blank","width=800,height=600");
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <title>Fichaje ${meses[mes]} ${año} - ${currentUser.displayName}</title>
+  <style>body{font-family:Arial,sans-serif;font-size:10px;margin:1cm}h2{font-size:13px;color:#2C3E50;margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#2C3E50;color:white;padding:6px;text-align:left}
+  td{padding:4px 6px;border-bottom:1px solid #eee;vertical-align:top}
+  </style></head><body>
+  <h2>Registro de Fichaje — ${meses[mes]} ${año}</h2>
+  <p><strong>Profesor/a:</strong> ${currentUser.displayName} &nbsp; <strong>Email:</strong> ${currentUser.mail}</p>
+  <table><thead><tr><th>Fecha</th><th>Actividades</th><th>Total</th></tr></thead>
+  <tbody>${filas}</tbody>
+  <tfoot><tr style="background:#f5f5f5;font-weight:bold"><td colspan="2">TOTAL MES</td><td style="text-align:center">${totalH}</td></tr></tfoot>
+  </table>
+  <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  win.document.close();
+}
+
+// ── UTILIDADES ────────────────────────────────────────
+function fmtHora(iso) {
+  if (!iso) return "";
+  return new Date(iso).toTimeString().slice(0,5);
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────
+(async () => {
+  try {
+    await msalInstance.initialize();
+    const resp = await msalInstance.handleRedirectPromise();
+    if (resp) msalInstance.setActiveAccount(resp.account);
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      msalInstance.setActiveAccount(accounts[0]);
+      await cargarApp();
+    }
+  } catch(e) { console.error(e); }
+})();
+</script>
+</body>
+</html>
