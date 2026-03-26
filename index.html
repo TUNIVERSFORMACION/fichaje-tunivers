@@ -182,7 +182,16 @@ const MSAL_CONFIG = {
     authority: "https://login.microsoftonline.com/2a8fa13e-07b5-4505-b339-210526ef643d",
     redirectUri: window.location.href.split("?")[0].split("#")[0],
   },
-  cache: { cacheLocation: "sessionStorage" }
+  cache: {
+    cacheLocation: "localStorage",      // evita bloqueo de Tracking Prevention
+    storeAuthStateInCookie: true,        // fallback para Safari ITP
+  },
+  system: {
+    allowNativeBroker: false,
+    windowHashTimeout: 60000,
+    iframeHashTimeout: 6000,
+    loadFrameTimeout: 0,
+  }
 };
 const SCOPES = ["Calendars.Read", "User.Read", "Files.ReadWrite"];
 const SCOPES_ADMIN = ["Calendars.Read", "User.Read", "Files.ReadWrite", "Files.Read.All", "User.ReadBasic.All"];
