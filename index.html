@@ -310,20 +310,33 @@ async function cargarApp() {
     eventosHoy = (evData.value || []).filter(e => !e.isAllDay && !e.isCancelled);
 
     // Cargar fichajes guardados del día
-    const keyHoy = `fichajes_${currentUser.id}_${hoy.toISOString().slice(0,10)}`;
+    const mm = String(hoy.getMonth()+1).padStart(2,"0");
+    const dd = String(hoy.getDate()).padStart(2,"0");
+    const fechaHoy = `${hoy.getFullYear()}-${mm}-${dd}`;
+    const keyHoy = `fichajes_${currentUser.id}_${fechaHoy}`;
     fichajesHoy = JSON.parse(localStorage.getItem(keyHoy) || "[]");
 
     // Fichar automáticamente eventos que han finalizado y no están fichados
-    fichajeAutomatico();
+    await fichajeAutomatico();
 
     // Renderizar
     renderApp();
 
-    // Timer cada minuto
-    timerInterval = setInterval(() => {
+    // Timer: cada minuto ficha eventos nuevos + actualiza hora
+    // Cada 5 minutos recarga el calendario completo desde Outlook para detectar cambios
+    let minutosTranscurridos = 0;
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(async () => {
       actualizarFechaTopbar();
-      fichajeAutomatico();
-      renderEstadoActual();
+      minutosTranscurridos++;
+
+      // Cada 5 minutos recargar calendario desde Outlook
+      if (minutosTranscurridos % 5 === 0) {
+        await recargarCalendario();
+      } else {
+        await fichajeAutomatico();
+        renderEstadoActual();
+      }
     }, 60000);
 
   } catch(e) {
@@ -345,9 +358,75 @@ function actualizarFechaTopbar() {
 }
 
 // ── FICHAJE AUTOMÁTICO ────────────────────────────────
+async function recargarCalendario() {
+  try {
+    const hoy = new Date();
+    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 0, 0, 0).toISOString();
+    const finHoy    = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59).toISOString();
+
+    const evData = await graphGet(
+      `/me/calendarView?startDateTime=${inicioHoy}&endDateTime=${finHoy}` +
+      `&$select=id,subject,start,end,location,categories,isAllDay,isCancelled` +
+      `&$orderby=start/dateTime&$top=50`
+    );
+
+    const eventosNuevos = (evData.value || []).filter(e => !e.isAllDay);
+    // Incluir cancelados para poder detectarlos
+    const eventosCancelados = (evData.value || []).filter(e => !e.isAllDay && e.isCancelled);
+    const idsActivos = new Set(eventosNuevos.filter(e => !e.isCancelled).map(e => e.id));
+    const idsCancelados = new Set(eventosCancelados.map(e => e.id));
+
+    let cambios = false;
+
+    // Detectar eventos que ya no existen o fueron cancelados después de fichar
+    fichajesHoy = fichajesHoy.map(f => {
+      // El evento fue cancelado explícitamente
+      if (idsCancelados.has(f.eventoId) && !f.cancelado) {
+        cambios = true;
+        return { ...f, cancelado: true, motivoCancelacion: "Evento cancelado en Outlook" };
+      }
+      // El evento desapareció del calendario (borrado)
+      if (!idsActivos.has(f.eventoId) && !idsCancelados.has(f.eventoId) && !f.cancelado) {
+        cambios = true;
+        return { ...f, cancelado: true, motivoCancelacion: "Evento eliminado del calendario" };
+      }
+      // El evento se restableció (estaba cancelado pero volvió a estar activo)
+      if (idsActivos.has(f.eventoId) && f.cancelado) {
+        cambios = true;
+        return { ...f, cancelado: false, motivoCancelacion: "" };
+      }
+      return f;
+    });
+
+    // Actualizar lista de eventos activos
+    eventosHoy = eventosNuevos.filter(e => !e.isCancelled);
+
+    if (cambios) {
+      const mm = String(hoy.getMonth()+1).padStart(2,"0");
+      const dd = String(hoy.getDate()).padStart(2,"0");
+      const fechaHoy = `${hoy.getFullYear()}-${mm}-${dd}`;
+      const keyHoy = `fichajes_${currentUser?.id}_${fechaHoy}`;
+      localStorage.setItem(keyHoy, JSON.stringify(fichajesHoy));
+      await guardarParaExportar();
+    }
+
+    // Fichar nuevos eventos completados + refrescar UI
+    await fichajeAutomatico();
+    renderApp();
+  } catch(e) {
+    console.warn("Error recargando calendario:", e);
+    // Si falla la recarga no interrumpir — seguir con los datos que tenemos
+    await fichajeAutomatico();
+    renderEstadoActual();
+  }
+}
+
 async function fichajeAutomatico() {
   const ahora = new Date();
-  const keyHoy = `fichajes_${currentUser?.id}_${ahora.toISOString().slice(0,10)}`;
+  const mm = String(ahora.getMonth()+1).padStart(2,"0");
+  const dd = String(ahora.getDate()).padStart(2,"0");
+  const fechaHoy = `${ahora.getFullYear()}-${mm}-${dd}`;
+  const keyHoy = `fichajes_${currentUser?.id}_${fechaHoy}`;
   let cambios = false;
 
   eventosHoy.forEach(ev => {
@@ -355,7 +434,7 @@ async function fichajeAutomatico() {
     const fin    = new Date(ev.end.dateTime   || ev.end.date);
     const yaFichado = fichajesHoy.find(f => f.eventoId === ev.id);
 
-    // Si el evento ya terminó y no está fichado → ficharlo
+    // Si el evento ya terminó, no está cancelado y no está fichado → ficharlo
     if (fin <= ahora && !yaFichado) {
       const tipo = detectarTipo(ev.subject, ev.categories);
       fichajesHoy.push({
@@ -366,6 +445,7 @@ async function fichajeAutomatico() {
         tipo,
         lugar:       ev.location?.displayName || "",
         fichado:     true,
+        cancelado:   false,
         horaFichaje: new Date().toISOString(),
         automatico:  true,
       });
@@ -376,7 +456,7 @@ async function fichajeAutomatico() {
   if (cambios) {
     localStorage.setItem(keyHoy, JSON.stringify(fichajesHoy));
     await guardarParaExportar();
-    renderApp(); // refrescar UI con nuevos fichajes
+    renderApp();
   }
 }
 
@@ -568,7 +648,10 @@ function renderFichajesHoyHTML() {
     const lugar = ev.location?.displayName;
 
     let badge, badgeClass;
-    if (fichaje) {
+    if (fichaje?.cancelado) {
+      badge = "Cancelado";
+      badgeClass = "badge-ausente";
+    } else if (fichaje) {
       badge = "✓ Fichado";
       badgeClass = "badge-ok";
     } else if (fin < ahora) {
@@ -584,12 +667,15 @@ function renderFichajesHoyHTML() {
 
     const mins = Math.round((fin - ini) / 60000);
     const duracion = mins >= 60 ? `${Math.floor(mins/60)}h${mins%60>0?` ${mins%60}min`:""}` : `${mins}min`;
+    const canceladoStyle = fichaje?.cancelado ? "opacity:0.45;text-decoration:line-through" : "";
+    const motivoCancelacion = fichaje?.cancelado ? `<div style="font-size:10px;color:var(--red);margin-top:2px">⚠ ${fichaje.motivoCancelacion}</div>` : "";
 
-    items += `<div class="fichaje-item">
-      <div class="fi-color" style="background:${tc.color}"></div>
+    items += `<div class="fichaje-item" style="${canceladoStyle}">
+      <div class="fi-color" style="background:${fichaje?.cancelado?"#ccc":tc.color}"></div>
       <div class="fi-info">
         <div class="fi-titulo">${ev.subject}</div>
         <div class="fi-meta">${fmtHora(ev.start.dateTime)}–${fmtHora(ev.end.dateTime)} · ${duracion}${lugar ? " · " + lugar : ""}</div>
+        ${motivoCancelacion}
       </div>
       <span class="fi-badge ${badgeClass}">${badge}</span>
     </div>`;
@@ -683,7 +769,7 @@ function renderTotalesHTML() {
 
     if (fDia.length > 0) {
       const minsDia = fDia.reduce((s,f) => {
-        if (!f.inicio || !f.fin) return s;
+        if (!f.inicio || !f.fin || f.cancelado) return s;  // excluir cancelados
         return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
       }, 0);
       if (minsDia > 0) {
@@ -697,7 +783,7 @@ function renderTotalesHTML() {
     ? `${Math.floor(totalMinsMes/60)}h ${totalMinsMes%60}min`
     : "0h";
   const totalHoy = fichajesHoy.reduce((s,f) => {
-    if (!f.inicio || !f.fin) return s;
+    if (!f.inicio || !f.fin || f.cancelado) return s;
     return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
   }, 0);
   const hHoy = totalHoy > 0 ? `${Math.floor(totalHoy/60)}h ${totalHoy%60}min` : "0h";
