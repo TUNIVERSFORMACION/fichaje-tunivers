@@ -260,10 +260,10 @@ async function cerrarSesion() {
 }
 
 // ── GRAPH API ─────────────────────────────────────────
-async function graphGet(url) {
+async function graphGet(url, extraHeaders = {}) {
   const token = await getToken();
   const resp = await fetch("https://graph.microsoft.com/v1.0" + url, {
-    headers: { Authorization: "Bearer " + token }
+    headers: { Authorization: "Bearer " + token, ...extraHeaders }
   });
   if (!resp.ok) throw new Error("Graph error: " + resp.status);
   return resp.json();
@@ -296,24 +296,23 @@ async function cargarApp() {
     document.getElementById("topbar-name").textContent = perfil.displayName || perfil.mail;
     actualizarFechaTopbar();
 
-    // Eventos hoy
+    // Eventos hoy — fecha en hora local de Madrid
     const hoy = new Date();
-    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 0, 0, 0).toISOString();
-    const finHoy    = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59).toISOString();
+    const fechaHoyMadrid = fechaLocalMadrid(hoy);
+    const inicioHoy = `${fechaHoyMadrid}T00:00:00`;
+    const finHoy    = `${fechaHoyMadrid}T23:59:59`;
 
     const evData = await graphGet(
       `/me/calendarView?startDateTime=${inicioHoy}&endDateTime=${finHoy}` +
       `&$select=id,subject,start,end,location,categories,isAllDay,isCancelled` +
-      `&$orderby=start/dateTime&$top=50`
+      `&$orderby=start/dateTime&$top=50`,
+      { "Prefer": 'outlook.timezone="Europe/Madrid"' }
     );
 
     eventosHoy = (evData.value || []).filter(e => !e.isAllDay && !e.isCancelled);
 
-    // Cargar fichajes guardados del día
-    const mm = String(hoy.getMonth()+1).padStart(2,"0");
-    const dd = String(hoy.getDate()).padStart(2,"0");
-    const fechaHoy = `${hoy.getFullYear()}-${mm}-${dd}`;
-    const keyHoy = `fichajes_${currentUser.id}_${fechaHoy}`;
+    // Cargar fichajes guardados del día (clave en hora Madrid)
+    const keyHoy = `fichajes_${currentUser.id}_${fechaHoyMadrid}`;
     fichajesHoy = JSON.parse(localStorage.getItem(keyHoy) || "[]");
 
     // Fichar automáticamente eventos que han finalizado y no están fichados
@@ -351,23 +350,27 @@ async function cargarApp() {
 
 function actualizarFechaTopbar() {
   const ahora = new Date();
-  const dias = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
-  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  // Formatear en hora Madrid
+  const opciones = { timeZone: "Europe/Madrid", weekday:"long", day:"numeric", month:"long", hour:"2-digit", minute:"2-digit" };
+  const partes = new Intl.DateTimeFormat("es-ES", opciones).formatToParts(ahora);
+  const get = tipo => partes.find(p => p.type === tipo)?.value || "";
   document.getElementById("topbar-date").textContent =
-    `${dias[ahora.getDay()]}, ${ahora.getDate()} de ${meses[ahora.getMonth()]} · ${ahora.getHours().toString().padStart(2,"0")}:${ahora.getMinutes().toString().padStart(2,"0")}`;
+    `${get("weekday").charAt(0).toUpperCase()+get("weekday").slice(1)}, ${get("day")} de ${get("month")} · ${get("hour")}:${get("minute")}`;
 }
 
 // ── FICHAJE AUTOMÁTICO ────────────────────────────────
 async function recargarCalendario() {
   try {
     const hoy = new Date();
-    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 0, 0, 0).toISOString();
-    const finHoy    = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59).toISOString();
+    const fechaHoyMadrid = fechaLocalMadrid(hoy);
+    const inicioHoy = `${fechaHoyMadrid}T00:00:00`;
+    const finHoy    = `${fechaHoyMadrid}T23:59:59`;
 
     const evData = await graphGet(
       `/me/calendarView?startDateTime=${inicioHoy}&endDateTime=${finHoy}` +
       `&$select=id,subject,start,end,location,categories,isAllDay,isCancelled` +
-      `&$orderby=start/dateTime&$top=50`
+      `&$orderby=start/dateTime&$top=50`,
+      { "Prefer": 'outlook.timezone="Europe/Madrid"' }
     );
 
     const eventosNuevos = (evData.value || []).filter(e => !e.isAllDay);
@@ -402,10 +405,7 @@ async function recargarCalendario() {
     eventosHoy = eventosNuevos.filter(e => !e.isCancelled);
 
     if (cambios) {
-      const mm = String(hoy.getMonth()+1).padStart(2,"0");
-      const dd = String(hoy.getDate()).padStart(2,"0");
-      const fechaHoy = `${hoy.getFullYear()}-${mm}-${dd}`;
-      const keyHoy = `fichajes_${currentUser?.id}_${fechaHoy}`;
+      const keyHoy = `fichajes_${currentUser?.id}_${fechaLocalMadrid(hoy)}`;
       localStorage.setItem(keyHoy, JSON.stringify(fichajesHoy));
       await guardarParaExportar();
     }
@@ -423,15 +423,12 @@ async function recargarCalendario() {
 
 async function fichajeAutomatico() {
   const ahora = new Date();
-  const mm = String(ahora.getMonth()+1).padStart(2,"0");
-  const dd = String(ahora.getDate()).padStart(2,"0");
-  const fechaHoy = `${ahora.getFullYear()}-${mm}-${dd}`;
-  const keyHoy = `fichajes_${currentUser?.id}_${fechaHoy}`;
+  const keyHoy = `fichajes_${currentUser?.id}_${fechaLocalMadrid(ahora)}`;
   let cambios = false;
 
   eventosHoy.forEach(ev => {
-    const inicio = new Date(ev.start.dateTime || ev.start.date);
-    const fin    = new Date(ev.end.dateTime   || ev.end.date);
+    const inicio = parseEventDate(ev.start.dateTime || ev.start.date);
+    const fin    = parseEventDate(ev.end.dateTime   || ev.end.date);
     const yaFichado = fichajesHoy.find(f => f.eventoId === ev.id);
 
     // Si el evento ya terminó, no está cancelado y no está fichado → ficharlo
@@ -463,9 +460,10 @@ async function fichajeAutomatico() {
 async function guardarParaExportar() {
   // 1. Guardar en localStorage como respaldo local
   const exportKey = `export_fichajes_${currentUser?.id}`;
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = new Date();
+  const hoyClave = fechaLocalMadrid(hoy);
   let allFichajes = JSON.parse(localStorage.getItem(exportKey) || "{}");
-  allFichajes[hoy] = fichajesHoy;
+  allFichajes[hoyClave] = fichajesHoy;
   localStorage.setItem(exportKey, JSON.stringify(allFichajes));
 
   // 2. Guardar en OneDrive del profesor — carpeta "FICHAJES OUTLOOK"
@@ -534,8 +532,8 @@ function construirPayloadMes(año, mes) {
     const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
     if (fDia.length > 0) {
       const slots = fDia.slice(0,4).map(f => [
-        f.inicio ? new Date(f.inicio).toTimeString().slice(0,5) : "",
-        f.fin    ? new Date(f.fin).toTimeString().slice(0,5)    : "",
+        f.inicio ? parseEventDate(f.inicio).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}) : "",
+        f.fin    ? parseEventDate(f.fin).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'})    : "",
       ]);
       while (slots.length < 4) slots.push(["",""]);
       dias.push({ fecha, tipo: "T", slots, eventos: fDia.map(f=>({titulo:f.titulo,tipo:f.tipo,inicio:f.inicio,fin:f.fin})) });
@@ -583,12 +581,12 @@ function renderEstadoActual() {
 function renderEstadoHTML() {
   const ahora = new Date();
   const eventoActivo = eventosHoy.find(ev => {
-    const ini = new Date(ev.start.dateTime || ev.start.date);
-    const fin = new Date(ev.end.dateTime   || ev.end.date);
+    const ini = parseEventDate(ev.start.dateTime || ev.start.date);
+    const fin = parseEventDate(ev.end.dateTime   || ev.end.date);
     return ini <= ahora && ahora < fin;
   });
   const eventoProximo = !eventoActivo && eventosHoy.find(ev => {
-    const ini = new Date(ev.start.dateTime || ev.start.date);
+    const ini = parseEventDate(ev.start.dateTime || ev.start.date);
     return ini > ahora && ini - ahora < 30*60*1000;
   });
 
@@ -607,7 +605,7 @@ function renderEstadoHTML() {
         ${lugar ? `<div class="ev-lugar">📍 ${lugar}</div>` : ""}
       </div>`;
   } else if (eventoProximo) {
-    const mins = Math.round((new Date(eventoProximo.start.dateTime) - ahora) / 60000);
+    const mins = Math.round((parseEventDate(eventoProximo.start.dateTime) - ahora) / 60000);
     const tipo = detectarTipo(eventoProximo.subject, eventoProximo.categories);
     const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
     contenido = `
@@ -616,7 +614,7 @@ function renderEstadoHTML() {
         <span><strong>${eventoProximo.subject}</strong> empieza en ${mins} minuto${mins!==1?"s":""}.</span>
       </div>`;
   } else {
-    const pendientes = eventosHoy.filter(ev => new Date(ev.start.dateTime) > ahora);
+    const pendientes = eventosHoy.filter(ev => parseEventDate(ev.start.dateTime) > ahora);
     contenido = pendientes.length > 0
       ? `<div class="sin-evento">Sin actividad ahora mismo.<br/><span style="font-size:11px;color:var(--text3)">${pendientes.length} evento${pendientes.length!==1?"s":""} más hoy.</span></div>`
       : `<div class="sin-evento">No hay más actividad programada hoy.</div>`;
@@ -640,8 +638,8 @@ function renderFichajesHoyHTML() {
   const ahora = new Date();
   let items = "";
   eventosHoy.forEach(ev => {
-    const ini = new Date(ev.start.dateTime || ev.start.date);
-    const fin = new Date(ev.end.dateTime   || ev.end.date);
+    const ini = parseEventDate(ev.start.dateTime || ev.start.date);
+    const fin = parseEventDate(ev.end.dateTime   || ev.end.date);
     const tipo = detectarTipo(ev.subject, ev.categories);
     const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
     const fichaje = fichajesHoy.find(f => f.eventoId === ev.id);
@@ -691,13 +689,13 @@ function renderFichajesHoyHTML() {
 
 function renderProximosHTML() {
   const ahora = new Date();
-  const proximos = eventosHoy.filter(ev => new Date(ev.start.dateTime) > ahora).slice(0, 3);
+  const proximos = eventosHoy.filter(ev => parseEventDate(ev.start.dateTime) > ahora).slice(0, 3);
   if (proximos.length === 0) return "";
 
   let items = proximos.map(ev => {
     const tipo = detectarTipo(ev.subject, ev.categories);
     const tc = TIPO_CONFIG[tipo] || TIPO_CONFIG["Otro"];
-    const mins = Math.round((new Date(ev.end.dateTime) - new Date(ev.start.dateTime)) / 60000);
+    const mins = Math.round((parseEventDate(ev.end.dateTime) - parseEventDate(ev.start.dateTime)) / 60000);
     const dur = mins >= 60 ? `${Math.floor(mins/60)}h${mins%60>0?` ${mins%60}min`:""}` : `${mins}min`;
     return `<div class="proximo-item">
       <div class="pr-hora">${fmtHora(ev.start.dateTime)}</div>
@@ -718,21 +716,28 @@ function renderProximosHTML() {
 function renderSemanaHTML() {
   const ahora = new Date();
   const diasSemana = ["Lu","Ma","Mi","Ju","Vi"];
-  // Calcular lunes de esta semana
-  const lunes = new Date(ahora);
-  const dw = ahora.getDay() === 0 ? 6 : ahora.getDay() - 1;
-  lunes.setDate(lunes.getDate() - dw);
+  const fechaHoyMadrid = fechaLocalMadrid(ahora);
+
+  // Calcular lunes de esta semana en hora Madrid
+  const ahoraEnMadrid = new Date(ahora.toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+  const dwMadrid = ahoraEnMadrid.getDay() === 0 ? 6 : ahoraEnMadrid.getDay() - 1;
+  const lunes = new Date(ahoraEnMadrid);
+  lunes.setDate(lunes.getDate() - dwMadrid);
 
   let pills = "";
   for (let i = 0; i < 5; i++) {
     const dia = new Date(lunes);
     dia.setDate(lunes.getDate() + i);
-    const esHoy = dia.toDateString() === ahora.toDateString();
-    const keyDia = `fichajes_${currentUser?.id}_${dia.toISOString().slice(0,10)}`;
-    const fichajesDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
+    const año  = dia.getFullYear();
+    const mes  = String(dia.getMonth()+1).padStart(2,"0");
+    const dd   = String(dia.getDate()).padStart(2,"0");
+    const fechaDia = `${año}-${mes}-${dd}`;
+    const esHoy = fechaDia === fechaHoyMadrid;
+    const keyDia = `fichajes_${currentUser?.id}_${fechaDia}`;
+    const fichajesDia = esHoy ? fichajesHoy : JSON.parse(localStorage.getItem(keyDia) || "[]");
     const mins = fichajesDia.reduce((s, f) => {
-      if (!f.inicio || !f.fin) return s;
-      return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+      if (!f.inicio || !f.fin || f.cancelado) return s;
+      return s + Math.round((parseEventDate(f.fin) - parseEventDate(f.inicio)) / 60000);
     }, 0);
     const hStr = mins > 0 ? `${Math.floor(mins/60)}h${mins%60>0?`${mins%60}`:""}` : "—";
 
@@ -751,40 +756,36 @@ function renderSemanaHTML() {
 
 function renderTotalesHTML() {
   const ahora = new Date();
-  const año = ahora.getFullYear();
-  const mes = ahora.getMonth();
+  // Trabajar en hora Madrid
+  const ahoraEnMadrid = new Date(ahora.toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+  const año = ahoraEnMadrid.getFullYear();
+  const mes = ahoraEnMadrid.getMonth();
+  const diaHoy = ahoraEnMadrid.getDate();
+  const fechaHoyMadrid = fechaLocalMadrid(ahora);
   let totalMinsMes = 0;
   let diasConActividad = 0;
 
-  for (let d = 1; d <= ahora.getDate(); d++) {
-    // Construir fecha local sin conversión UTC
+  for (let d = 1; d <= diaHoy; d++) {
     const mm = String(mes+1).padStart(2,"0");
     const dd = String(d).padStart(2,"0");
     const fecha = `${año}-${mm}-${dd}`;
     const keyDia = `fichajes_${currentUser?.id}_${fecha}`;
-
-    // Usar fichajesHoy directamente para el día de hoy (más actualizado)
-    const esHoy = d === ahora.getDate();
+    const esHoy = fecha === fechaHoyMadrid;
     const fDia = esHoy ? fichajesHoy : JSON.parse(localStorage.getItem(keyDia) || "[]");
 
     if (fDia.length > 0) {
       const minsDia = fDia.reduce((s,f) => {
-        if (!f.inicio || !f.fin || f.cancelado) return s;  // excluir cancelados
-        return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+        if (!f.inicio || !f.fin || f.cancelado) return s;
+        return s + Math.round((parseEventDate(f.fin) - parseEventDate(f.inicio)) / 60000);
       }, 0);
-      if (minsDia > 0) {
-        diasConActividad++;
-        totalMinsMes += minsDia;
-      }
+      if (minsDia > 0) { diasConActividad++; totalMinsMes += minsDia; }
     }
   }
 
-  const hMes = totalMinsMes > 0
-    ? `${Math.floor(totalMinsMes/60)}h ${totalMinsMes%60}min`
-    : "0h";
+  const hMes = totalMinsMes > 0 ? `${Math.floor(totalMinsMes/60)}h ${totalMinsMes%60}min` : "0h";
   const totalHoy = fichajesHoy.reduce((s,f) => {
     if (!f.inicio || !f.fin || f.cancelado) return s;
-    return s + Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+    return s + Math.round((parseEventDate(f.fin) - parseEventDate(f.inicio)) / 60000);
   }, 0);
   const hHoy = totalHoy > 0 ? `${Math.floor(totalHoy/60)}h ${totalHoy%60}min` : "0h";
   const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -840,8 +841,8 @@ function exportarJSON() {
     if (fDia.length > 0) {
       // Agrupar slots por día (hasta 4 franjas como el sistema de gestión)
       const slots = fDia.slice(0,4).map(f => [
-        f.inicio ? new Date(f.inicio).toTimeString().slice(0,5) : "",
-        f.fin    ? new Date(f.fin).toTimeString().slice(0,5)    : "",
+        f.inicio ? parseEventDate(f.inicio).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}) : "",
+        f.fin    ? parseEventDate(f.fin).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'})    : "",
       ]);
       while (slots.length < 4) slots.push(["",""]);
       dias.push({ fecha, tipo: "T", slots });
@@ -891,8 +892,8 @@ function exportarPDF() {
     let eventosCell = "";
     if (fDia.length > 0) {
       fDia.forEach(f => {
-        const ini = f.inicio ? new Date(f.inicio).toTimeString().slice(0,5) : "";
-        const fin = f.fin    ? new Date(f.fin).toTimeString().slice(0,5)    : "";
+        const ini = f.inicio ? parseEventDate(f.inicio).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}) : "";
+        const fin = f.fin    ? parseEventDate(f.fin).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'})    : "";
         if (f.inicio && f.fin)
           mins += Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
         eventosCell += `<div style="font-size:8px">${ini}–${fin} ${f.titulo||""}</div>`;
@@ -926,10 +927,46 @@ function exportarPDF() {
   win.document.close();
 }
 
-// ── UTILIDADES ────────────────────────────────────────
+// ── ZONA HORARIA ─────────────────────────────────────
+// Graph devuelve fechas sin 'Z' cuando son hora local del calendario
+// Hay que forzar interpretación en Europe/Madrid
+function parseEventDate(iso) {
+  if (!iso) return new Date();
+  // Si ya tiene zona horaria explícita (Z o +XX:XX) parsear normal
+  if (iso.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(iso)) {
+    return new Date(iso);
+  }
+  // Sin zona horaria → Graph la devuelve en la hora local del calendario del usuario
+  // Forzamos interpretación como Europe/Madrid usando Intl
+  // Truco: añadir offset de Madrid manualmente
+  const madridOffset = getMadridOffset(new Date(iso + "Z"));
+  const adjusted = new Date(new Date(iso + "Z").getTime() - madridOffset * 60000);
+  return adjusted;
+}
+
+function getMadridOffset() {
+  // Calcula el offset actual de Europe/Madrid en minutos
+  const now = new Date();
+  const utcStr = now.toLocaleString("en-US", { timeZone: "UTC" });
+  const madridStr = now.toLocaleString("en-US", { timeZone: "Europe/Madrid" });
+  const diff = (new Date(madridStr) - new Date(utcStr)) / 60000;
+  return diff; // +60 invierno, +120 verano
+}
+
 function fmtHora(iso) {
   if (!iso) return "";
-  return new Date(iso).toTimeString().slice(0,5);
+  return parseEventDate(iso).toLocaleTimeString("es-ES", {
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "Europe/Madrid"
+  });
+}
+
+function fechaLocalMadrid(date) {
+  // Devuelve AAAA-MM-DD en hora de Madrid
+  return date.toLocaleDateString("es-ES", {
+    timeZone: "Europe/Madrid",
+    year: "numeric", month: "2-digit", day: "2-digit"
+  }).split("/").reverse().join("-");
 }
 
 function showToast(msg) {
