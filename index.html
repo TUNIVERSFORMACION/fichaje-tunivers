@@ -879,9 +879,12 @@ function exportarJSON() {
 function exportarPDF() {
   if (!currentUser) return;
   const ahora = new Date();
-  const mes = ahora.getMonth();
-  const año = ahora.getFullYear();
+  // Usar hora Madrid para mes y año
+  const ahoraEnMadrid = new Date(ahora.toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+  const mes = ahoraEnMadrid.getMonth();
+  const año = ahoraEnMadrid.getFullYear();
   const diasMes = new Date(año, mes+1, 0).getDate();
+  const fechaHoyMadrid = fechaLocalMadrid(ahora);
   const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
   const dsShort = ["do","lu","ma","mi","ju","vi","sá"];
 
@@ -889,11 +892,15 @@ function exportarPDF() {
   let totalMins = 0;
 
   for (let d = 1; d <= diasMes; d++) {
-    const fecha = new Date(año, mes, d);
-    const fechaStr = fecha.toISOString().slice(0,10);
+    // Construir fecha en hora Madrid sin conversión UTC
+    const mm = String(mes+1).padStart(2,"0");
+    const dd = String(d).padStart(2,"0");
+    const fechaStr = `${año}-${mm}-${dd}`;
     const keyDia = `fichajes_${currentUser.id}_${fechaStr}`;
-    const fDia = JSON.parse(localStorage.getItem(keyDia) || "[]");
-    const dw = fecha.getDay();
+    // Usar fichajesHoy en memoria para el día de hoy (más actualizado)
+    const esHoy = fechaStr === fechaHoyMadrid;
+    const fDia = esHoy ? fichajesHoy : JSON.parse(localStorage.getItem(keyDia) || "[]");
+    const dw = new Date(año, mes, d).getDay();
     const isWk = dw === 0 || dw === 6;
     const bg = isWk ? "#f5f5f5" : "white";
 
@@ -901,10 +908,16 @@ function exportarPDF() {
     let eventosCell = "";
     if (fDia.length > 0) {
       fDia.forEach(f => {
-        const ini = f.inicio ? parseEventDate(f.inicio).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}) : "";
-        const fin = f.fin    ? parseEventDate(f.fin).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'})    : "";
-        if (f.inicio && f.fin)
-          mins += Math.round((new Date(f.fin) - new Date(f.inicio)) / 60000);
+        if (f.cancelado) {
+          eventosCell += `<div style="font-size:8px;color:#999;text-decoration:line-through">${f.titulo||""} (cancelado)</div>`;
+          return; // no sumar al total
+        }
+        const ini = f.inicio ? parseEventDate(f.inicio).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}) : "";
+        const fin = f.fin    ? parseEventDate(f.fin).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}) : "";
+        if (f.inicio && f.fin) {
+          const m = Math.round((parseEventDate(f.fin) - parseEventDate(f.inicio)) / 60000);
+          mins += m;
+        }
         eventosCell += `<div style="font-size:8px">${ini}–${fin} ${f.titulo||""}</div>`;
       });
     }
@@ -912,27 +925,46 @@ function exportarPDF() {
     const hStr = mins > 0 ? `${Math.floor(mins/60)}:${String(mins%60).padStart(2,"0")}` : "";
 
     filas += `<tr style="background:${bg}">
-      <td>${dsShort[dw]} ${String(d).padStart(2,"0")}/${String(mes+1).padStart(2,"0")}</td>
-      <td style="font-size:9px;text-align:left">${eventosCell}</td>
+      <td>${dsShort[dw]} ${String(d).padStart(2,"0")}/${mm}</td>
+      <td style="font-size:9px;text-align:left">${eventosCell||"—"}</td>
       <td style="text-align:center;font-weight:bold">${hStr}</td>
     </tr>`;
   }
 
-  const totalH = `${Math.floor(totalMins/60)}h ${totalMins%60}min`;
+  const totalH = totalMins > 0
+    ? `${Math.floor(totalMins/60)}h ${String(totalMins%60).padStart(2,"0")}min`
+    : "0h 00min";
+
   const win = window.open("","_blank","width=800,height=600");
   win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
   <title>Fichaje ${meses[mes]} ${año} - ${currentUser.displayName}</title>
-  <style>body{font-family:Arial,sans-serif;font-size:10px;margin:1cm}h2{font-size:13px;color:#2C3E50;margin-bottom:4px}
-  table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#2C3E50;color:white;padding:6px;text-align:left}
-  td{padding:4px 6px;border-bottom:1px solid #eee;vertical-align:top}
+  <style>
+    body{font-family:Arial,sans-serif;font-size:10px;margin:1cm;color:#111}
+    h2{font-size:13px;color:#2C3E50;margin-bottom:4px}
+    .meta{font-size:10px;margin-bottom:12px;color:#555}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    th{background:#2C3E50;color:white;padding:6px 8px;text-align:left;font-size:9px}
+    td{padding:4px 8px;border-bottom:1px solid #eee;vertical-align:top}
+    tfoot td{background:#f0f0f0;font-weight:bold;font-size:11px;padding:7px 8px}
+    .total-cell{text-align:right;font-size:13px;color:#2C3E50}
+    @media print{body{margin:0.5cm}}
   </style></head><body>
   <h2>Registro de Fichaje — ${meses[mes]} ${año}</h2>
-  <p><strong>Profesor/a:</strong> ${currentUser.displayName} &nbsp; <strong>Email:</strong> ${currentUser.mail}</p>
-  <table><thead><tr><th>Fecha</th><th>Actividades</th><th>Total</th></tr></thead>
-  <tbody>${filas}</tbody>
-  <tfoot><tr style="background:#f5f5f5;font-weight:bold"><td colspan="2">TOTAL MES</td><td style="text-align:center">${totalH}</td></tr></tfoot>
+  <div class="meta">
+    <strong>Profesor/a:</strong> ${currentUser.displayName} &nbsp;·&nbsp;
+    <strong>Email:</strong> ${currentUser.mail} &nbsp;·&nbsp;
+    <strong>Generado:</strong> ${new Date().toLocaleDateString("es-ES",{timeZone:"Europe/Madrid"})}
+  </div>
+  <table>
+    <thead><tr><th style="width:70px">Fecha</th><th>Actividades</th><th style="width:60px;text-align:center">Total</th></tr></thead>
+    <tbody>${filas}</tbody>
+    <tfoot><tr>
+      <td colspan="2">TOTAL ACUMULADO ${meses[mes].toUpperCase()} ${año}</td>
+      <td class="total-cell">${totalH}</td>
+    </tr></tfoot>
   </table>
-  <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  <script>window.onload=function(){window.print();}<\/script>
+  </body></html>`);
   win.document.close();
 }
 
