@@ -131,6 +131,41 @@
   /* EMPTY */
   .empty { text-align: center; padding: 2rem 1rem; color: var(--text3); font-size: 13px; }
 
+  /* PESTAÑAS */
+  .tabs { display: none; background: var(--card); border-bottom: 0.5px solid var(--border); position: sticky; top: 56px; z-index: 40; }
+  .tabs button { flex: 1; padding: 11px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 13px; font-weight: 600; color: var(--text2); cursor: pointer; font-family: inherit; }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .app.ancho { max-width: 960px; }
+
+  /* NÓMINAS */
+  .nom-sub { display: flex; gap: 6px; padding: 1rem 1rem 0.75rem; overflow-x: auto; }
+  .nom-sub button { padding: 7px 12px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--card); font-size: 12px; cursor: pointer; white-space: nowrap; font-family: inherit; color: var(--text); }
+  .nom-sub button.on { background: var(--accent); color: white; border-color: var(--accent); }
+  .nom-card { background: var(--card); border-radius: var(--radius); padding: 1rem; border: 0.5px solid var(--border); box-shadow: var(--shadow); margin-bottom: 12px; }
+  .nom-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .nom-form .full { grid-column: 1 / -1; }
+  .nom-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 600; color: var(--text2); }
+  .nom-form small { font-weight: 400; color: var(--text3); }
+  .nom-form input, .nom-form select, .nom-form textarea, .nom-code { width: 100%; padding: 8px 10px; border: 0.5px solid var(--border2); border-radius: 8px; font-size: 13px; font-family: inherit; background: white; color: var(--text); }
+  .nom-code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; margin: 8px 0; }
+  .nom-hint { font-size: 11px; color: var(--text2); line-height: 1.5; }
+  .nom-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .nom-acciones > * { flex: 1; min-width: 150px; margin-top: 0; }
+  .nom-file { display: flex; align-items: center; justify-content: center; text-align: center; }
+  .nom-file input { display: none; }
+  .nom-borrar { color: var(--red); }
+  .nom-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .nom-table td, .nom-table th { padding: 6px 4px; border-bottom: 0.5px solid var(--border); text-align: left; }
+  .nom-table th { font-size: 10px; color: var(--text2); text-transform: uppercase; }
+  .nom-table .num { text-align: right; white-space: nowrap; }
+  .nom-table small { color: var(--text3); }
+  .nom-table tr.h td { font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; padding-top: 12px; }
+  .nom-table tr.t td { font-weight: 700; border-bottom: 1px solid var(--border2); }
+  .nom-scroll { overflow-x: auto; }
+  .nom-edit input, .nom-edit select { min-width: 70px; padding: 6px; border: 0.5px solid var(--border2); border-radius: 6px; font-size: 12px; font-family: inherit; width: 100%; }
+  .nom-edit td:first-child input { min-width: 150px; }
+  .btn-mini { padding: 6px 10px; border-radius: 6px; border: 0.5px solid var(--border2); background: var(--card); font-size: 12px; cursor: pointer; font-family: inherit; margin-top: 6px; }
+
   @media (min-width: 480px) {
     .app { border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
   }
@@ -166,6 +201,11 @@
     <button class="btn-logout" onclick="cerrarSesion()">Salir</button>
   </div>
 
+  <div class="tabs" id="tabs">
+    <button id="tab-fichaje" class="on" onclick="cambiarVista('fichaje')">Fichaje</button>
+    <button id="tab-nominas" onclick="cambiarVista('nominas')">Nóminas</button>
+  </div>
+
   <div id="app-content">
     <div class="loading"><div class="spinner"></div>Cargando tu agenda...</div>
   </div>
@@ -174,6 +214,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="nominas.js"></script>
 <script>
 // ── CONFIGURACIÓN AZURE ──────────────────────────────
 const MSAL_CONFIG = {
@@ -203,12 +244,23 @@ const msalInstance = new msal.PublicClientApplication(MSAL_CONFIG);
 // dentro de su propio OneDrive — el admin los lee todos vía Files.Read.All
 const ONEDRIVE_FOLDER = "FICHAJES OUTLOOK";
 
+// ── NÓMINAS ───────────────────────────────────────────
+// Solo estas cuentas ven la pestaña de Nóminas (email completo o la parte
+// anterior a la @). Añade aquí a quien gestione las nóminas.
+const NOMINAS_ADMINS = ["centrofp"];
+
+function esAdminNominas(mail) {
+  const m = (mail || "").toLowerCase();
+  return NOMINAS_ADMINS.some(a => m === a.toLowerCase() || m.split("@")[0] === a.toLowerCase());
+}
+
 // ── ESTADO ────────────────────────────────────────────
 let currentUser = null;
 let accessToken = null;
 let eventosHoy = [];
 let fichajesHoy = [];  // {eventoId, titulo, inicio, fin, tipo, fichado, horaFichaje}
 let timerInterval = null;
+let vistaActual = "fichaje";  // "fichaje" | "nominas"
 
 // ── COLORES TIPO ──────────────────────────────────────
 const TIPO_CONFIG = {
@@ -266,6 +318,7 @@ async function cerrarSesion() {
   await msalInstance.logoutPopup();
   document.getElementById("login-screen").style.display = "flex";
   document.getElementById("app").style.display = "none";
+  cambiarVista("fichaje");
 }
 
 // ── GRAPH API ─────────────────────────────────────────
@@ -303,6 +356,7 @@ async function cargarApp() {
     } catch { document.getElementById("topbar-avatar").textContent = perfil.displayName?.[0] || "?"; }
 
     document.getElementById("topbar-name").textContent = perfil.displayName || perfil.mail;
+    document.getElementById("tabs").style.display = esAdminNominas(perfil.mail) ? "flex" : "none";
     actualizarFechaTopbar();
 
     // Eventos hoy — fecha en hora local de Madrid
@@ -545,7 +599,7 @@ function construirPayloadMes(año, mes) {
         f.fin    ? parseEventDate(f.fin).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'})    : "",
       ]);
       while (slots.length < 4) slots.push(["",""]);
-      dias.push({ fecha, tipo: "T", slots, eventos: fDia.map(f=>({titulo:f.titulo,tipo:f.tipo,inicio:f.inicio,fin:f.fin})) });
+      dias.push({ fecha, tipo: "T", slots, eventos: fDia.map(f=>({titulo:f.titulo,tipo:f.tipo,inicio:f.inicio,fin:f.fin,cancelado:!!f.cancelado})) });
     }
   }
   return {
@@ -569,7 +623,17 @@ function mostrarBadgeSync(ok) {
 }
 
 // ── RENDER PRINCIPAL ──────────────────────────────────
+function cambiarVista(vista) {
+  vistaActual = vista;
+  document.getElementById("tab-fichaje").classList.toggle("on", vista === "fichaje");
+  document.getElementById("tab-nominas").classList.toggle("on", vista === "nominas");
+  document.getElementById("app").classList.toggle("ancho", vista === "nominas");
+  if (vista === "nominas") renderNominas();
+  else renderApp();
+}
+
 function renderApp() {
+  if (vistaActual !== "fichaje") return;
   const ahora = new Date();
   const html = `
     ${renderEstadoHTML()}
