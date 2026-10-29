@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Radar IA — Tunivers</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0b0c0e;
+    --card: #121418;
+    --card2: #1a1d22;
+    --text: #f2f3f5;
+    --text2: #a4a8b0;
+    --text3: #6c717a;
+    --border: #262a31;
+    --lime: #b6f23a;
+    --lime-bg: #1a2410;
+    --orange: #f5a524;
+    --orange-bg: #2e2110;
+    --grey: #7c8189;
+    --red: #ff6b7a;
+    --r: 18px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 80px; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* Map */
+  #map { height: 260px; border-radius: 22px; border: 1px solid var(--border); position: relative; background: #15171a; }
+  .map-box { position: relative; }
+  .legend { position: absolute; left: 12px; bottom: 12px; z-index: 500; background: rgba(11,12,14,.85); backdrop-filter: blur(6px);
+    border-radius: 999px; padding: 6px 14px; display: flex; gap: 14px; font-size: 13px; font-weight: 500; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  .d-high { background: var(--lime); } .d-mid { background: var(--orange); } .d-low { background: var(--grey); }
+  .leaflet-container { background: #15171a; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card2); color: var(--text); }
+
+  h1 { font-size: 30px; line-height: 1.12; letter-spacing: -0.03em; font-weight: 800; margin: 26px 0 18px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .city-btn { background: var(--lime-bg); border: 1px solid #3b5214; border-radius: 14px; padding: 10px 16px; font-weight: 600; font-size: 16px; }
+  .city-btn b { color: var(--lime); }
+  .stats { color: var(--text2); font-size: 15px; text-align: right; }
+
+  .city-form { display: none; margin-top: 12px; gap: 8px; }
+  .city-form.open { display: flex; }
+  .city-form input { flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; color: var(--text); font: inherit; font-size: 16px; }
+  .btn { background: var(--lime); color: #10140a; border: none; border-radius: 12px; padding: 12px 18px; font-weight: 700; }
+
+  .chips { display: flex; gap: 10px; overflow-x: auto; margin: 18px -16px 0; padding: 0 16px 4px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; min-width: 118px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 12px 14px; text-align: center; }
+  .chip .ico { font-size: 26px; }
+  .chip .lbl { font-size: 14px; color: var(--text2); font-weight: 500; margin-top: 4px; }
+  .chip .num { font-size: 20px; font-weight: 800; margin-top: 2px; }
+  .chip.on { border: 2px solid var(--lime); background: linear-gradient(var(--lime-bg), var(--card)); }
+  .chip.on .num { color: var(--lime); }
+
+  .tools { display: flex; gap: 8px; margin: 16px 0 6px; flex-wrap: wrap; }
+  .tool { background: none; border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; color: var(--text2); font-size: 14px; font-weight: 500; }
+  .tool.on { color: var(--lime); border-color: #3b5214; }
+  .search { flex: 1; min-width: 140px; background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; color: var(--text); font: inherit; font-size: 14px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 24px; padding: 18px 20px; margin-top: 14px; }
+  .card-top { display: flex; gap: 12px; justify-content: space-between; cursor: pointer; }
+  .name { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .sub { color: var(--text2); font-size: 15px; margin-top: 6px; line-height: 1.35; }
+  .sub .pb { color: var(--red); }
+  .tags { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .tag { background: var(--card2); border-radius: 10px; padding: 5px 10px; font-size: 13px; font-weight: 500; }
+  .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+  .prio { border-radius: 10px; padding: 4px 10px; font-size: 13px; font-weight: 600; }
+  .p-high { background: var(--orange-bg); color: var(--orange); }
+  .p-mid { background: #22252b; color: #d6d9de; }
+  .p-low { background: #1a1c20; color: var(--text3); }
+  .money { font-size: 13px; color: var(--text2); white-space: nowrap; }
+  .money b { font-size: 26px; font-weight: 800; color: var(--lime); letter-spacing: -0.02em; }
+  .money.mid b { color: var(--orange); } .money.low b { color: var(--grey); }
+  .monthly { color: var(--text2); font-size: 14px; display: flex; align-items: center; gap: 6px; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid #3b5214; background: var(--lime-bg); color: var(--lime);
+    display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 15px; }
+  .icon-btn.off { opacity: .25; pointer-events: none; }
+  .chev { color: var(--text3); transition: transform .2s; align-self: center; }
+  .card.open .chev { transform: rotate(180deg); }
+
+  .details { display: none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .card.open .details { display: block; }
+  .opp { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
+  .opp:last-child { border-bottom: none; }
+  .opp .why { color: var(--text3); font-size: 13px; margin-top: 2px; }
+  .opp .eur { font-weight: 700; white-space: nowrap; }
+  .info { font-size: 14px; color: var(--text2); margin-top: 12px; line-height: 1.6; word-break: break-word; }
+  .info a { color: var(--lime); }
+  .pitch { margin-top: 12px; background: var(--card2); border-radius: 14px; padding: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; color: #d6d9de; }
+  .acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .acts .tool { color: var(--text); }
+
+  .empty, .loading { text-align: center; color: var(--text2); padding: 40px 10px; }
+  .spinner { width: 34px; height: 34px; border: 3px solid var(--border); border-top-color: var(--lime); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .more { display: block; margin: 18px auto 0; }
+  .note { color: var(--text3); font-size: 12px; text-align: center; margin-top: 30px; line-height: 1.5; }
+  .note a { color: var(--text2); }
+
+  @media (max-width: 520px) {
+    h1 { font-size: 26px; }
+    .card-top { flex-direction: column; }
+    .right { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .stats { text-align: left; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="map-box">
+    <div id="map"></div>
+    <div class="legend">
+      <span><span class="dot d-high"></span>+3.500 €</span>
+      <span><span class="dot d-mid"></span>1.500 – 3.500 €</span>
+      <span><span class="dot d-low"></span>menos</span>
+    </div>
+  </div>
+
+  <h1>¿A quién te gustaría venderle una solución con IA?</h1>
+
+  <div class="row">
+    <button class="city-btn" id="cityBtn">📍 <b id="cityName">—</b> · cambiar</button>
+    <div class="stats" id="stats"></div>
+  </div>
+  <form class="city-form" id="cityForm">
+    <input id="cityInput" placeholder="Ciudad (ej. Gijón, Oviedo, Valencia…)" autocomplete="off"/>
+    <button class="btn" type="submit">Buscar</button>
+  </form>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="tools">
+    <button class="tool on" id="sortBtn">⇅ Más dinero primero</button>
+    <button class="tool" id="csvBtn">⬇ Descargar lista (Excel)</button>
+    <input class="search" id="q" placeholder="Filtrar por nombre…"/>
+  </div>
+
+  <div id="list"></div>
+
+  <p class="note">Datos de negocios: © colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.
+    Los importes son estimaciones orientativas de lo que podrías facturar resolviendo cada problema.</p>
+</div>
+
+<script>
+/* ===== Configuración: precios de cada solución (edítalos a tu gusto) ===== */
+const SOLUTIONS = {
+  noWeb:       { label: 'Web profesional con IA',          setup: 1500, monthly: 29, why: 'No tiene página web' },
+  webDown:     { label: 'Web nueva con IA',                setup: 1500, monthly: 29, why: 'Web: la web no carga o da error' },
+  noHttps:     { label: 'Migrar web a HTTPS segura',       setup: 400,  monthly: 0,  why: 'Web insegura (sin HTTPS)' },
+  booking:     { label: 'Reservas / citas online con IA',  setup: 900,  monthly: 25, why: 'Sin sistema de reservas online' },
+  voiceAgent:  { label: 'Agente IA de llamadas y WhatsApp',setup: 1250, monthly: 49, why: 'Atiende el teléfono a mano' },
+  noEmail:     { label: 'Automatización email + CRM',      setup: 600,  monthly: 0,  why: 'Sin email de contacto publicado' },
+  noPhone:     { label: 'Chatbot de atención 24/7',        setup: 700,  monthly: 19, why: 'Sin teléfono publicado' },
+  noHours:     { label: 'Ficha Google optimizada',         setup: 300,  monthly: 0,  why: 'Sin horario publicado' },
+  noSocial:    { label: 'Contenido redes con IA',          setup: 500,  monthly: 39, why: 'Sin redes sociales enlazadas' },
+};
+const HIGH = 3500, MID = 1500;
+
+const CATS = [
+  { id: 'rest',  name: 'Restaurantes', ico: '🍽️', booking: true, q: ['amenity~"^(restaurant|cafe|bar|pub|fast_food|ice_cream)$"'] },
+  { id: 'hair',  name: 'Peluquerías',  ico: '💇', booking: true, q: ['shop~"^(hairdresser|beauty|barber|massage|cosmetics)$"'] },
+  { id: 'clin',  name: 'Clínicas',     ico: '🦷', booking: true, q: ['amenity~"^(dentist|clinic|doctors|veterinary)$"', 'healthcare~"^(physiotherapist|psychotherapist|optometrist|podiatrist|dentist|clinic)$"'] },
+  { id: 'gym',   name: 'Gimnasios',    ico: '🏋️', booking: true, q: ['leisure~"^(fitness_centre|sports_centre|dance)$"'] },
+  { id: 'hotel', name: 'Alojamiento',  ico: '🏨', booking: true, q: ['tourism~"^(hotel|guest_house|hostel|motel|apartment)$"'] },
+  { id: 'car',   name: 'Talleres',     ico: '🔧', booking: true, q: ['shop~"^(car_repair|car|tyres|motorcycle)$"'] },
+  { id: 'off',   name: 'Despachos',    ico: '💼', booking: false, q: ['office~"^(estate_agent|accountant|lawyer|tax_advisor|insurance|architect)$"'] },
+  { id: 'shop',  name: 'Tiendas',      ico: '🛍️', booking: false, q: ['shop~"^(clothes|shoes|florist|bakery|optician|jewelry|furniture|gift|books|sports|toys|pet|butcher|deli|wine)$"'] },
+];
+
+const TYPE_ES = {
+  restaurant: 'Restaurante', cafe: 'Cafetería', bar: 'Bar', pub: 'Pub', fast_food: 'Comida rápida', ice_cream: 'Heladería',
+  hairdresser: 'Peluquería', beauty: 'Centro de estética', barber: 'Barbería', massage: 'Masajes', cosmetics: 'Cosmética',
+  dentist: 'Dentista', clinic: 'Clínica', doctors: 'Consulta médica', veterinary: 'Veterinario', physiotherapist: 'Fisioterapia',
+  psychotherapist: 'Psicología', optometrist: 'Óptica', podiatrist: 'Podología',
+  fitness_centre: 'Gimnasio', sports_centre: 'Centro deportivo', dance: 'Escuela de baile',
+  hotel: 'Hotel', guest_house: 'Pensión', hostel: 'Albergue', motel: 'Motel', apartment: 'Apartamentos',
+  car_repair: 'Taller', car: 'Concesionario', tyres: 'Neumáticos', motorcycle: 'Motos',
+  estate_agent: 'Inmobiliaria', accountant: 'Gestoría', lawyer: 'Abogados', tax_advisor: 'Asesoría fiscal', insurance: 'Seguros', architect: 'Arquitectura',
+  clothes: 'Ropa', shoes: 'Zapatería', florist: 'Floristería', bakery: 'Panadería', optician: 'Óptica', jewelry: 'Joyería',
+  furniture: 'Muebles', gift: 'Regalos', books: 'Librería', sports: 'Deportes', toys: 'Juguetería', pet: 'Mascotas',
+  butcher: 'Carnicería', deli: 'Delicatessen', wine: 'Vinoteca',
+};
+
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const PAGE = 40;
+
+let state = { city: null, items: [], cat: 'all', sortMoney: true, q: '', shown: PAGE, open: new Set() };
+let map, layer;
+
+const $ = id => document.getElementById(id);
+const eur = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' €';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tier = v => v >= HIGH ? 'high' : v >= MID ? 'mid' : 'low';
+const TIER_COLOR = { high: '#b6f23a', mid: '#f5a524', low: '#7c8189' };
+
+/* ===== Datos ===== */
+async function geocode(city) {
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=es&countrycodes=es&q=' + encodeURIComponent(city);
+  const r = await fetch(url);
+  const d = await r.json();
+  if (!d.length) throw new Error('No encuentro esa ciudad');
+  const g = d[0];
+  return { name: g.name || city, lat: +g.lat, lon: +g.lon, osmType: g.osm_type, osmId: +g.osm_id, bbox: g.boundingbox.map(Number) };
+}
+
+function buildQuery(city) {
+  // Área administrativa si existe; si no, radio de 5 km alrededor del centro
+  const useArea = city.osmType === 'relation';
+  const scope = useArea ? '(area.a)' : `(around:5000,${city.lat},${city.lon})`;
+  const head = useArea ? `area(${3600000000 + city.osmId})->.a;` : '';
+  const parts = CATS.flatMap(c => c.q.map(f => `nwr[${f}][name]${scope};`)).join('\n');
+  return `[out:json][timeout:90];${head}(\n${parts}\n);out center tags 4000;`;
+}
+
+async function overpass(query) {
+  let lastErr;
+  for (const ep of OVERPASS) {
+    try {
+      const r = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(query), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (!r.ok) throw new Error('Overpass ' + r.status);
+      return (await r.json()).elements;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+function catOf(t) {
+  const v = k => t[k] || '';
+  if (/^(restaurant|cafe|bar|pub|fast_food|ice_cream)$/.test(v('amenity'))) return 'rest';
+  if (/^(hairdresser|beauty|barber|massage|cosmetics)$/.test(v('shop'))) return 'hair';
+  if (/^(dentist|clinic|doctors|veterinary)$/.test(v('amenity')) || t.healthcare) return 'clin';
+  if (t.leisure) return 'gym';
+  if (t.tourism) return 'hotel';
+  if (/^(car_repair|car|tyres|motorcycle)$/.test(v('shop'))) return 'car';
+  if (t.office) return 'off';
+  return 'shop';
+}
+
+function analyze(el) {
+  const t = el.tags;
+  const cat = catOf(t);
+  const catDef = CATS.find(c => c.id === cat);
+  const type = t.amenity || t.shop || t.healthcare || t.leisure || t.tourism || t.office;
+  const web = t.website || t['contact:website'] || t.url || '';
+  const phone = t.phone || t['contact:phone'] || t['contact:mobile'] || '';
+  const email = t.email || t['contact:email'] || '';
+  const social = t['contact:facebook'] || t['contact:instagram'] || t.facebook || t.instagram || '';
+  const addr = [t['addr:street'], t['addr:housenumber']].filter(Boolean).join(' ');
+  const biz = {
+    id: el.type + el.id, name: t.name, cat, type: TYPE_ES[type] || type,
+    lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon,
+    web: web && !/^https?:\/\//i.test(web) ? 'https://' + web : web,
+    phone: phone.split(';')[0].trim(), email: email.split(';')[0].trim(), social, addr,
+    hours: t.opening_hours || '', reservation: t.reservation || '',
+    webStatus: web ? 'pending' : 'none',
+  };
+  biz.problems = computeProblems(biz, catDef);
+  return biz;
+}
+
+function computeProblems(b, catDef = CATS.find(c => c.id === b.cat)) {
+  const p = [];
+  if (b.webStatus === 'none') p.push('noWeb');
+  if (b.webStatus === 'down') p.push('webDown');
+  if (b.webStatus === 'http') p.push('noHttps');
+  if (catDef.booking && !/^(yes|required|recommended|online)$/.test(b.reservation)) p.push('booking');
+  if (catDef.booking) p.push('voiceAgent');
+  if (!b.phone) p.push('noPhone');
+  if (!b.email) p.push('noEmail');
+  if (!b.hours) p.push('noHours');
+  if (!b.social) p.push('noSocial');
+  b.problems = p;
+  b.value = p.reduce((s, k) => s + SOLUTIONS[k].setup, 0);
+  b.monthly = p.reduce((s, k) => s + SOLUTIONS[k].monthly, 0);
+  b.tier = tier(b.value);
+  return p;
+}
+
+/* Comprueba si la web carga. Con mode:no-cors la promesa sólo falla si el servidor no responde (DNS, caída, SSL roto). */
+async function checkWeb(b) {
+  const ping = url => Promise.race([
+    fetch(url, { mode: 'no-cors', cache: 'no-store', redirect: 'follow' }).then(() => true, () => false),
+    new Promise(r => setTimeout(() => r(false), 8000)),
+  ]);
+  const httpsUrl = b.web.replace(/^http:/i, 'https:');
+  if (await ping(httpsUrl)) { b.webStatus = 'ok'; return; }
+  // Si la web es http:// (no se puede comprobar desde https) la marcamos como insegura
+  b.webStatus = /^http:/i.test(b.web) ? 'http' : 'down';
+}
+
+async function checkAllWebs(token) {
+  const queue = state.items.filter(b => b.webStatus === 'pending');
+  const worker = async () => {
+    while (queue.length && token === state.token) {
+      const b = queue.shift();
+      await checkWeb(b);
+      if (token !== state.token) return;
+      computeProblems(b);
+      scheduleRender();
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+}
+
+let renderTimer;
+function scheduleRender() { clearTimeout(renderTimer); renderTimer = setTimeout(render, 300); }
+
+async function loadCity(name) {
+  const token = state.token = Symbol();
+  $('cityName').textContent = name;
+  $('list').innerHTML = `<div class="loading"><div class="spinner"></div>Buscando negocios en ${esc(name)}…</div>`;
+  $('stats').textContent = ''; $('chips').innerHTML = '';
+  try {
+    const city = await geocode(name);
+    if (token !== state.token) return;
+    state.city = city;
+    $('cityName').textContent = city.name;
+    map.fitBounds([[city.bbox[0], city.bbox[2]], [city.bbox[1], city.bbox[3]]]);
+    const els = await overpass(buildQuery(city));
+    if (token !== state.token) return;
+    const seen = new Set();
+    state.items = els.map(analyze).filter(b => b.lat && !seen.has(b.name + b.addr) && seen.add(b.name + b.addr));
+    state.cat = 'all'; state.shown = PAGE; state.open.clear();
+    try { localStorage.setItem('radar-city', city.name); } catch {}
+    render();
+    checkAllWebs(token);
+  } catch (e) {
+    if (token !== state.token) return;
+    $('list').innerHTML = `<div class="empty">⚠️ ${esc(e.message || e)}<br/><br/><button class="tool" onclick="loadCity('${esc(name).replace(/'/g, "\\'")}')">Reintentar</button></div>`;
+  }
+}
+
+/* ===== Vista ===== */
+function filtered() {
+  const q = state.q.toLowerCase();
+  let list = state.items.filter(b => (state.cat === 'all' || b.cat === state.cat) && (!q || b.name.toLowerCase().includes(q)));
+  list = list.slice().sort(state.sortMoney ? (a, b) => b.value - a.value || a.name.localeCompare(b.name) : (a, b) => a.name.localeCompare(b.name));
+  return list;
+}
+
+function render() {
+  const all = state.items;
+  const high = all.filter(b => b.tier === 'high').length;
+  const checking = all.filter(b => b.webStatus === 'pending').length;
+  $('stats').innerHTML = `${all.length} negocios · <b style="color:var(--lime)">${high}</b> prioridad alta` + (checking ? `<br/><span style="font-size:13px;color:var(--text3)">comprobando ${checking} webs…</span>` : '');
+
+  const counts = { all: all.length };
+  all.forEach(b => counts[b.cat] = (counts[b.cat] || 0) + 1);
+  $('chips').innerHTML = [{ id: 'all', name: 'Todos', ico: '🏙️' }, ...CATS].filter(c => counts[c.id]).map(c =>
+    `<button class="chip ${state.cat === c.id ? 'on' : ''}" data-cat="${c.id}"><div class="ico">${c.ico}</div><div class="lbl">${c.name}</div><div class="num">${counts[c.id]}</div></button>`).join('');
+
+  const list = filtered();
+  drawMap(list);
+  if (!list.length) { $('list').innerHTML = '<div class="empty">No hay negocios con esos filtros.</div>'; return; }
+  $('list').innerHTML = list.slice(0, state.shown).map(cardHTML).join('') +
+    (list.length > state.shown ? `<button class="tool more" id="moreBtn">Ver más (${list.length - state.shown})</button>` : '');
+}
+
+function mainProblem(b) {
+  const order = ['webDown', 'noWeb', 'noHttps', 'booking', 'noPhone', 'noEmail', 'noHours', 'noSocial'];
+  const k = order.find(k => b.problems.includes(k));
+  return k ? SOLUTIONS[k].why : '';
+}
+
+function cardHTML(b) {
+  const prio = { high: ['p-high', '🔥 Alta'], mid: ['p-mid', 'Media'], low: ['p-low', 'Baja'] }[b.tier];
+  const tags = [];
+  if (b.web) tags.push(`🌐 Web${b.webStatus === 'pending' ? ' …' : b.webStatus === 'ok' ? ' ✓' : ' ✗'}`);
+  if (b.problems.includes('booking')) tags.push('📅 Reservas');
+  if (b.problems.includes('voiceAgent')) tags.push('📞 Agente IA');
+  if (b.problems.includes('noSocial')) tags.push('📣 Redes');
+  const tel = b.phone ? `tel:${b.phone.replace(/\s/g, '')}` : '';
+  const mail = b.email ? `mailto:${b.email}?subject=${encodeURIComponent('Propuesta para ' + b.name)}&body=${encodeURIComponent(pitch(b))}` : '';
+  const open = state.open.has(b.id);
+  return `<div class="card ${open ? 'open' : ''}" data-id="${b.id}">
+    <div class="card-top">
+      <div>
+        <div class="name">${esc(b.name)}</div>
+        <div class="sub">${esc(b.type)} · <span class="pb">${esc(mainProblem(b))}</span></div>
+        <div class="tags">${tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>
+      </div>
+      <div class="right">
+        <span class="prio ${prio[0]}">${prio[1]}</span>
+        <span class="money ${b.tier}">hasta <b>${eur(b.value)}</b></span>
+        <span class="monthly">+${b.monthly} €/mes
+          <a class="icon-btn ${tel ? '' : 'off'}" href="${tel}" title="Llamar" onclick="event.stopPropagation()">📞</a>
+          <a class="icon-btn ${mail ? '' : 'off'}" href="${mail}" title="Email" onclick="event.stopPropagation()">✉️</a>
+        </span>
+      </div>
+      <span class="chev">⌄</span>
+    </div>
+    ${open ? detailsHTML(b) : '<div class="details"></div>'}
+  </div>`;
+}
+
+function detailsHTML(b) {
+  const gmaps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.name + ' ' + (b.addr || '') + ' ' + (state.city?.name || ''))}`;
+  const wa = b.phone ? `https://wa.me/${waNumber(b.phone)}?text=${encodeURIComponent(pitch(b))}` : '';
+  return `<div class="details">
+    ${b.problems.map(k => `<div class="opp"><div>${SOLUTIONS[k].label}<div class="why">${SOLUTIONS[k].why}</div></div>
+      <div class="eur">${eur(SOLUTIONS[k].setup)}${SOLUTIONS[k].monthly ? ` <span style="color:var(--text3);font-weight:500">+${SOLUTIONS[k].monthly}/mes</span>` : ''}</div></div>`).join('')}
+    <div class="info">
+      ${b.addr ? `📍 ${esc(b.addr)}<br/>` : ''}
+      ${b.phone ? `📞 ${esc(b.phone)}<br/>` : ''}
+      ${b.email ? `✉️ ${esc(b.email)}<br/>` : ''}
+      ${b.web ? `🌐 <a href="${esc(b.web)}" target="_blank" rel="noopener">${esc(b.web)}</a><br/>` : ''}
+      ${b.hours ? `🕒 ${esc(b.hours)}<br/>` : ''}
+    </div>
+    <div class="pitch">${esc(pitch(b))}</div>
+    <div class="acts">
+      <button class="tool" data-copy="${b.id}">📋 Copiar mensaje</button>
+      ${wa ? `<a class="tool" href="${wa}" target="_blank" rel="noopener" style="text-decoration:none">💬 WhatsApp</a>` : ''}
+      <a class="tool" href="${gmaps}" target="_blank" rel="noopener" style="text-decoration:none">🗺️ Google Maps</a>
+    </div>
+  </div>`;
+}
+
+function waNumber(p) { let n = p.replace(/[^\d+]/g, '').replace(/^\+/, ''); if (n.length === 9) n = '34' + n; return n; }
+
+function pitch(b) {
+  const top = b.problems.slice(0, 3).map(k => '• ' + SOLUTIONS[k].label + ' (' + SOLUTIONS[k].why.toLowerCase().replace(/^web: /, '') + ')').join('\n');
+  return `Hola, equipo de ${b.name}:\n\nHe revisado vuestra presencia online y he visto algunas mejoras rápidas que podemos hacer con inteligencia artificial:\n${top}\n\n¿Os viene bien una llamada de 10 minutos esta semana para enseñároslo sin compromiso?\n\nUn saludo.`;
+}
+
+function drawMap(list) {
+  layer.clearLayers();
+  list.slice(0, 1500).forEach(b => {
+    L.circleMarker([b.lat, b.lon], { radius: 5, color: TIER_COLOR[b.tier], fillColor: TIER_COLOR[b.tier], fillOpacity: .85, weight: 1 })
+      .bindPopup(`<b>${esc(b.name)}</b><br/>${esc(b.type)}<br/>hasta <b>${eur(b.value)}</b>`)
+      .on('click', () => openCard(b.id))
+      .addTo(layer);
+  });
+}
+
+function openCard(id) {
+  const list = filtered();
+  const idx = list.findIndex(b => b.id === id);
+  if (idx >= state.shown) state.shown = idx + 1;
+  state.open.add(id);
+  render();
+  document.querySelector(`.card[data-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function exportCSV() {
+  const rows = [['Nombre', 'Tipo', 'Dirección', 'Teléfono', 'Email', 'Web', 'Estado web', 'Prioridad', 'Valor (€)', 'Mensual (€)', 'Problemas detectados', 'Lat', 'Lon']];
+  const st = { ok: 'Funciona', down: 'No carga', http: 'Sin HTTPS', none: 'Sin web', pending: 'Sin comprobar' };
+  filtered().forEach(b => rows.push([b.name, b.type, b.addr, b.phone, b.email, b.web, st[b.webStatus], { high: 'Alta', mid: 'Media', low: 'Baja' }[b.tier],
+    b.value, b.monthly, b.problems.map(k => SOLUTIONS[k].why).join(' | '), b.lat, b.lon]));
+  const csv = '\ufeff' + rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `negocios-${(state.city?.name || 'ciudad').toLowerCase().replace(/\s+/g, '-')}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ===== Eventos ===== */
+$('cityBtn').onclick = () => { $('cityForm').classList.toggle('open'); $('cityInput').focus(); };
+$('cityForm').onsubmit = e => { e.preventDefault(); const v = $('cityInput').value.trim(); if (v) { $('cityForm').classList.remove('open'); loadCity(v); } };
+$('sortBtn').onclick = () => { state.sortMoney = !state.sortMoney; $('sortBtn').classList.toggle('on', state.sortMoney); $('sortBtn').textContent = state.sortMoney ? '⇅ Más dinero primero' : '⇅ Orden alfabético'; render(); };
+$('csvBtn').onclick = exportCSV;
+$('q').oninput = e => { state.q = e.target.value; state.shown = PAGE; render(); };
+$('chips').onclick = e => { const c = e.target.closest('.chip'); if (c) { state.cat = c.dataset.cat; state.shown = PAGE; render(); } };
+$('list').onclick = e => {
+  if (e.target.id === 'moreBtn') { state.shown += PAGE; render(); return; }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) { const b = state.items.find(x => x.id === cp.dataset.copy); navigator.clipboard?.writeText(pitch(b)); cp.textContent = '✓ Copiado'; return; }
+  if (e.target.closest('.details') || e.target.closest('a')) return;
+  const card = e.target.closest('.card');
+  if (!card) return;
+  const id = card.dataset.id;
+  state.open.has(id) ? state.open.delete(id) : state.open.add(id);
+  const b = state.items.find(x => x.id === id);
+  card.outerHTML = cardHTML(b);
+};
+
+map = L.map('map', { zoomControl: false, attributionControl: true }).setView([43.535, -5.66], 13);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap · © CARTO', maxZoom: 19,
+}).addTo(map);
+layer = L.layerGroup().addTo(map);
+
+let startCity = 'Gijón';
+try { startCity = new URLSearchParams(location.search).get('ciudad') || localStorage.getItem('radar-city') || startCity; } catch {}
+loadCity(startCity);
+</script>
+</body>
+</html>
