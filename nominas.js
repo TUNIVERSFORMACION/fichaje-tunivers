@@ -30,17 +30,22 @@ const PARAMETROS_LEGALES = {
     // Cotización adicional de solidaridad sobre lo que exceda de la base máxima.
     // "hasta" = múltiplo de la base máxima donde acaba el tramo.
     solidaridad: [
-      { hasta: 1.10, tipo: 1.15 },
-      { hasta: 1.50, tipo: 1.25 },
-      { hasta: null, tipo: 1.46 },
+      { hasta: 1.10, tipo: 1.15, trab: 0.19 },
+      { hasta: 1.50, tipo: 1.25, trab: 0.21 },
+      { hasta: null, tipo: 1.46, trab: 0.24 },
     ],
-    solidaridadParteTrabajador: 1 / 6,  // reparto 5/6 empresa · 1/6 trabajador
     irpf: {
       escala: [ [12450, 19], [20200, 24], [35200, 30], [60000, 37], [300000, 45], [null, 47] ],
       minimoPersonal: 5550,
       minimoDescendientes: [2400, 2700, 4000, 4500],
       minimoMenor3: 2800,
-      minimoDiscapacidad: { 33: 3000, 65: 12000 },       // ≥65 % incluye gastos de asistencia
+      minimoMayor65: 1150,
+      minimoMayor75: 1400,
+      minimoDiscapacidad: { 33: 3000, 65: 9000 },
+      minimoAsistencia: 3000,          // ayuda de terceros, movilidad reducida o ≥ 65 %
+      gastosMovilidad: 2000,           // aceptación de puesto con traslado de residencia
+      incrementoAnualidades: 1980,     // anualidades por alimentos a los hijos
+      limitePrestamoVivienda: 33007.20,
       gastosGenerales: 2000,
       gastosDiscapacidad: { 33: 3500, 65: 7750 },
       // Reducción por obtención de rendimientos del trabajo (art. 20 LIRPF)
@@ -124,27 +129,77 @@ const CONVENIO_ENSENANZA_NO_REGLADA = (() => {
   };
 })();
 
-// IMPORTANTE: el segundo convenio lleva importes de ejemplo. Sustituir por
-// las tablas salariales vigentes publicadas en el boletín oficial.
-const CONVENIOS_EJEMPLO = [
-  CONVENIO_ENSENANZA_NO_REGLADA,
-  {
-    id: "conv2",
-    nombre: "Convenio 2 (editar nombre)",
-    codigo: "",
-    ejemplo: true,
-    jornadaAnual: 1800,
-    nombrePlus: "Plus convenio",
-    pagas: { numero: 2, meses: [7, 12], prorrateo: false, incluyePlus: true, incluyeAntiguedad: true },
-    antiguedad: { periodoAnios: 3, importe: 0, maxPeriodos: 0 },
+// XII Convenio colectivo nacional de centros de enseñanza privada de régimen general
+// o enseñanza reglada sin ningún nivel concertado ni subvencionado
+// (código 99001925011986, BOE-A-2024-15501, 26/7/2024). Tablas 2026 del anexo III.
+// - 15 pagas: 12 + 3 extraordinarias (salario base, CPP y cargo), antes del 1 de julio,
+//   antes del 22 de diciembre y la 3.ª dentro del año (art. 68). Por defecto: junio,
+//   septiembre y diciembre.
+// - Plus de productividad docente en 11 mensualidades (art. 71): todas menos agosto.
+// - Complemento de dedicación en 15 pagas: íntegro con jornada ≥ 60 %, proporcional
+//   por debajo (art. 69).
+// - CPP por quinquenio con la formación acreditada (art. 66), máximo 20 % del salario
+//   base (grupo I), 30 % (grupo II) y 40 % (grupos III y IV).
+// - Jornada anual (art. 33): docentes 1.376 h (1.089 lectivas + 237 no lectivas + 50 de
+//   formación), cargos +210 h; titulados de servicios complementarios 1.396 h; resto 1.724 h.
+// - Las clases a tiempo parcial se pagan en proporción a las horas lectivas (art. 63).
+// No incluye las tablas del anexo IV (centros procedentes del antiguo anexo IV, 14 pagas).
+const CONVENIO_ENSENANZA_REGLADA = (() => {
+  // [id, nombre, grupo profesional, grupo cotización, base, productividad, cargo, CPP]
+  const tabla = [
+    ["er-gs-1", "CFGS · Director/a", 1, 2, 1669.47, 78.40, 421.11, 100.84],
+    ["er-gs-2", "CFGS · Subdirector/a", 1, 2, 1669.47, 78.40, 369.39, 96.79],
+    ["er-gs-3", "CFGS · Jefe/a de Estudios", 1, 2, 1669.48, 78.40, 356.74, 95.66],
+    ["er-gs-4", "CFGS · Jefe/a de Departamento", 1, 2, 1669.48, 78.40, 300.72, 91.23],
+    ["er-gs-5", "CFGS · Profesor/a titular / Titular de taller o laboratorio", 1, 2, 1669.47, 78.40, 0, 67.28],
+    ["er-gs-6", "CFGS · Profesor/a adjunto/a, ayudante o auxiliar", 1, 2, 1550.08, 72.95, 0, 55.40],
+    ["er-gs-7", "CFGS · Instructor/a", 1, 2, 1425.24, 67.23, 0, 54.12],
+    ["er-gm-1", "CFGM · Director/a", 1, 2, 1608.38, 74.54, 349.69, 81.37],
+    ["er-gm-2", "CFGM · Subdirector/a", 1, 2, 1608.38, 72.89, 324.30, 80.57],
+    ["er-gm-3", "CFGM · Jefe/a de Estudios", 1, 2, 1608.38, 72.89, 299.27, 77.49],
+    ["er-gm-4", "CFGM · Jefe/a de Departamento", 1, 2, 1608.37, 72.89, 274.14, 75.43],
+    ["er-gm-5", "CFGM · Profesor/a titular / Titular de taller o laboratorio", 1, 2, 1608.38, 72.89, 0, 53.55],
+    ["er-gm-6", "CFGM · Profesor/a adjunto/a, ayudante o auxiliar", 1, 2, 1330.18, 55.76, 0, 47.99],
+    ["er-gm-7", "CFGM · Instructor/a", 1, 2, 1179.55, 46.47, 0, 43.36],
+    ["er-2a-1", "Personal especializado · Nivel I", 2, 2, 1628.28, 0, 0, 69.87],
+    ["er-2a-2", "Personal especializado · Nivel II", 2, 2, 1546.09, 0, 0, 55.75],
+    ["er-2b-1", "Monitor/a de actividades extracurriculares", 2, 7, 988.16, 0, 0, 45.42],
+    ["er-2b-2", "Vigilante educativo", 2, 7, 988.16, 0, 0, 45.42],
+    ["er-3-1", "Jefe/a de Administración o Secretaría", 3, 3, 1163.96, 0, 0, 56.56],
+    ["er-3-2", "Jefe/a de Negociado", 3, 5, 1062.11, 0, 0, 52.08],
+    ["er-3-3", "Oficial administrativo/a", 3, 5, 988.16, 0, 0, 47.69],
+    ["er-3-4", "Auxiliar administrativo/a o telefonista", 3, 7, 988.16, 0, 0, 47.69],
+    ["er-4-1", "Conserje / Gobernante", 4, 6, 988.16, 0, 0, 47.69],
+    ["er-4-2", "Jefe/a de Cocina / Oficial", 4, 8, 988.16, 0, 0, 47.69],
+    ["er-4-3", "Cocinero/a", 4, 8, 988.16, 0, 0, 47.69],
+    ["er-4-4", "Celador/a / Portero/a y ordenanza", 4, 6, 988.16, 0, 0, 47.69],
+    ["er-4-5", "Empleado/a de servicios generales", 4, 10, 988.16, 0, 0, 47.69],
+  ];
+  const maxPct = { 1: 20, 2: 30, 3: 40, 4: 40 };
+  return {
+    id: "er-xii",
+    nombre: "XII Convenio de enseñanza privada reglada sin concierto (anexo III)",
+    codigo: "99001925011986",
+    anioTablas: 2026,
+    jornadaAnual: 1724,
+    nombrePlus: "Plus de productividad docente",
+    plusMeses: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12],
+    nombreCargo: "Complemento temporal de cargo",
+    pagas: { numero: 3, meses: [6, 9, 12], prorrateo: false, incluyePlus: false, incluyeAntiguedad: true },
+    antiguedad: { nombre: "Complemento de perfeccionamiento profesional (CPP)", manual: true, periodoAnios: 5, importe: 0, maxPeriodos: 0 },
+    complementoJornada: { nombre: "Complemento de dedicación", tramos: [{ minPct: 60, importe: 124.03 }], proporcionalBajoMinimo: true, enPagas: true },
     recargoHoraExtra: 0,
     conceptos: [],
-    categorias: [
-      { id: "c2-1", nombre: "Formador/a",          grupoCotizacion: 2, salarioBase: 1400, plusConvenio: 50, importeAntiguedad: 20, precioHora: 15 },
-      { id: "c2-2", nombre: "Personal de oficina", grupoCotizacion: 7, salarioBase: 1250, plusConvenio: 40, importeAntiguedad: 15, precioHora: 0 },
-    ],
-  },
-];
+    categorias: tabla.map(([id, nombre, gp, gc, base, prod, cargo, cpp]) => ({
+      id, nombre, grupoProfesional: gp, grupoCotizacion: gc, salarioAnual: 0, salarioBase: base, plusConvenio: prod,
+      complementoCargo: cargo, importeAntiguedad: cpp, maxPctAntiguedad: maxPct[gp], precioHora: 0,
+      jornadaAnual: gp === 1 ? (cargo ? 1586 : 1376) : id.startsWith("er-2a") ? 1396 : 1724,
+      jornadaLectivaAnual: gp === 1 ? 1089 : 0,
+    })),
+  };
+})();
+
+const CONVENIOS_EJEMPLO = [CONVENIO_ENSENANZA_NO_REGLADA, CONVENIO_ENSENANZA_REGLADA];
 
 // ── UTILIDADES ──────────────────────────────────────────────────
 function r2(x) { return Math.round((x + Number.EPSILON) * 100) / 100; }
@@ -189,19 +244,39 @@ function calcularTipoIRPF(d, p) {
   const R = Math.max(0, d.retribucionAnual);
   const hijos = Math.max(0, Math.floor(d.hijos || 0));
   const disc = d.discapacidad || 0;
+  const ayuda = disc >= 65 || (disc >= 33 && d.discapacidadAyuda);  // ayuda de terceros / movilidad reducida
+  const edad = d.anioNacimiento ? (d.anioCalculo || new Date().getFullYear()) - d.anioNacimiento : 0;
 
   const rendimientoNeto = Math.max(0, R - d.cotizacionesAnuales);
   const reduccion = reduccionRendimientosTrabajo(rendimientoNeto, ip.reduccion);
-  const gastos = ip.gastosGenerales + (disc >= 65 ? ip.gastosDiscapacidad[65] : disc >= 33 ? ip.gastosDiscapacidad[33] : 0);
-  const base = Math.max(0, rendimientoNeto - reduccion - gastos);
+  const gastos = ip.gastosGenerales + (d.movilidadGeografica ? ip.gastosMovilidad : 0)
+    + (ayuda ? ip.gastosDiscapacidad[65] : disc >= 33 ? ip.gastosDiscapacidad[33] : 0);
+  // Base para calcular el tipo, minorada en la pensión compensatoria al cónyuge (art. 83 RIRPF)
+  const base = Math.max(0, rendimientoNeto - reduccion - gastos - num(d.pensionCompensatoria));
 
+  // Mínimo personal y familiar (art. 84 RIRPF)
+  const minDiscapacidad = (g, ay) => (g >= 65 ? ip.minimoDiscapacidad[65] : g >= 33 ? ip.minimoDiscapacidad[33] : 0) + (ay || g >= 65 ? ip.minimoAsistencia : 0);
+  let minPersonal = ip.minimoPersonal + (edad > 65 ? ip.minimoMayor65 : 0) + (edad > 75 ? ip.minimoMayor75 : 0);
   let minDesc = 0;
-  for (let i = 0; i < hijos; i++) minDesc += ip.minimoDescendientes[Math.min(i, 3)];
-  minDesc += ip.minimoMenor3 * Math.min(d.hijosMenores3 || 0, hijos);
-  if (d.hijosCompartidos) minDesc /= 2;
-  const minimo = ip.minimoPersonal + minDesc + (disc >= 65 ? ip.minimoDiscapacidad[65] : disc >= 33 ? ip.minimoDiscapacidad[33] : 0);
+  const anualidades = num(d.anualidadesAlimentos);
+  if (!anualidades) {
+    for (let i = 0; i < hijos; i++) minDesc += ip.minimoDescendientes[Math.min(i, 3)];
+    minDesc += ip.minimoMenor3 * Math.min(d.hijosMenores3 || 0, hijos);
+    minDesc += num(d.hijosDisc33) * ip.minimoDiscapacidad[33] + num(d.hijosDisc65) * (ip.minimoDiscapacidad[65] + ip.minimoAsistencia);
+    if (d.hijosCompartidos) minDesc /= 2;
+  }
+  const minAsc = num(d.ascendientes65) * ip.minimoMayor65 + num(d.ascendientes75) * (ip.minimoMayor65 + ip.minimoMayor75)
+    + num(d.ascendientesDisc33) * ip.minimoDiscapacidad[33] + num(d.ascendientesDisc65) * (ip.minimoDiscapacidad[65] + ip.minimoAsistencia);
+  const minimo = minPersonal + minDesc + minAsc + minDiscapacidad(disc, d.discapacidadAyuda);
 
-  let cuota = Math.max(0, aplicarEscala(base, ip.escala) - aplicarEscala(minimo, ip.escala));
+  // Cuota: con anualidades por alimentos a los hijos la escala se aplica por separado (art. 85.1 RIRPF)
+  let cuota;
+  if (anualidades > 0 && anualidades < base) {
+    cuota = aplicarEscala(base - anualidades, ip.escala) + aplicarEscala(anualidades, ip.escala) - aplicarEscala(minimo + ip.incrementoAnualidades, ip.escala);
+  } else {
+    cuota = aplicarEscala(base, ip.escala) - aplicarEscala(minimo, ip.escala);
+  }
+  cuota = Math.max(0, cuota);
 
   // Límite excluido de retención
   const fila = ip.limitesExcluidos[d.situacion] || ip.limitesExcluidos[3];
@@ -211,6 +286,8 @@ function calcularTipoIRPF(d, p) {
   else cuota = Math.min(cuota, (R - limite) * ip.porcentajeMaxCuota / 100);
 
   let tipo = R > 0 ? r2(cuota / R * 100) : 0;
+  // Préstamo de vivienda habitual con derecho a deducción: −2 puntos (art. 86.1 RIRPF)
+  if (d.prestamoVivienda && R < ip.limitePrestamoVivienda) tipo = Math.max(0, r2(tipo - 2));
   if (d.temporal && R > limite) tipo = Math.max(tipo, ip.tipoMinimoTemporal);
   return { tipo, base: r2(base), minimo: r2(minimo), cuota: r2(cuota), limite, reduccion: r2(reduccion), rendimientoNeto: r2(rendimientoNeto) };
 }
@@ -259,7 +336,9 @@ function calcularNomina(ctx) {
   const jornadaMensualJC = jornadaAnual / 12;
   // Pago por horas sin precio fijo: el salario del convenio en proporción a las horas
   const horasProporcional = porHoras && !(precioHora > 0);
-  const jf = horasProporcional ? horas / jornadaMensualJC : clamp(num(e.jornadaPct, 100), 0, 100) / 100;
+  // Docentes: la proporción se toma sobre la jornada lectiva si el convenio la fija
+  const jornadaRefHoras = (num(cat.jornadaLectivaAnual) || jornadaAnual) / 12;
+  const jf = horasProporcional ? horas / jornadaRefHoras : clamp(num(e.jornadaPct, 100), 0, 100) / 100;
   const dias = clamp(num(v.dias, 30), 0, 30);
   const fd = porHoras ? 1 : dias / 30;
   const prorrateo = porHoras || !!c.pagas?.prorrateo || !!e.prorrateo;
@@ -272,7 +351,9 @@ function calcularNomina(ctx) {
 
   // Salario base mensual a jornada completa (tablas anuales: entre 12 + nº de pagas)
   const baseJC = num(cat.salarioAnual) > 0 ? num(cat.salarioAnual) / (12 + nPagas) : num(cat.salarioBase);
-  const plusJC = num(cat.plusConvenio);
+  // Plus del convenio: puede cobrarse solo en algunos meses (p. ej. 11 mensualidades)
+  const plusJC = !c.plusMeses?.length || c.plusMeses.map(Number).includes(mes) ? num(cat.plusConvenio) : 0;
+  const cargoJC = num(cat.complementoCargo);
 
   // Antigüedad / CPP: automática por fecha o tramos reconocidos manualmente
   const ant = c.antiguedad || {};
@@ -291,6 +372,8 @@ function calcularNomina(ctx) {
   if (tramosJ.length) {
     const t = tramosJ.find(t => jf * 100 >= num(t.minPct));
     if (t && jf > 0) compJornada = num(t.importe);
+    // Por debajo del tramo mínimo, en proporción a la jornada (p. ej. reglada: < 60 %)
+    else if (jf > 0 && c.complementoJornada.proporcionalBajoMinimo) compJornada = num(tramosJ[tramosJ.length - 1].importe) * jf;
   }
 
   let pagaMensual, fijoMensualCompleto;
@@ -300,13 +383,16 @@ function calcularNomina(ctx) {
     fijoMensualCompleto = pagaMensual;
   } else {
     const compl = num(e.complementoPersonal);
-    add(horasProporcional ? `Salario base (${horas} h de ${r2(jornadaMensualJC)} h/mes)` : "Salario base", baseJC * jf * fd);
+    add(horasProporcional ? `Salario base (${horas} h de ${r2(jornadaRefHoras)} h/mes)` : "Salario base", baseJC * jf * fd);
     add(c.nombrePlus || "Plus convenio", plusJC * jf * fd);
+    add(c.nombreCargo || "Complemento de cargo", cargoJC * jf * fd);
     if (nAnt) add(`${nombreAnt} (${nAnt} ${nombrePeriodo}${nAnt !== 1 ? "s" : ""})`, impAntJC * jf * fd);
     add(c.complementoJornada?.nombre || "Complemento por jornada", compJornada * fd);
     add("Complemento personal", compl * jf * fd);
-    pagaMensual = (baseJC + (c.pagas?.incluyePlus ? plusJC : 0) + (c.pagas?.incluyeAntiguedad ? impAntJC : 0) + compl) * jf;
-    fijoMensualCompleto = (baseJC + plusJC + impAntJC + compl) * jf + compJornada;
+    const enPagasJ = c.complementoJornada?.enPagas ? compJornada : 0;
+    pagaMensual = (baseJC + (c.pagas?.incluyePlus ? num(cat.plusConvenio) : 0) + (c.pagas?.incluyeAntiguedad ? impAntJC : 0) + cargoJC + compl) * jf + enPagasJ;
+    const mesesPlus = c.plusMeses?.length || 12;
+    fijoMensualCompleto = (baseJC + num(cat.plusConvenio) * mesesPlus / 12 + cargoJC + impAntJC + compl) * jf + compJornada;
   }
 
   // Conceptos fijos del convenio y del empleado
@@ -327,8 +413,9 @@ function calcularNomina(ctx) {
   let precioOrdinario;
   if (porHoras && precioHora > 0) precioOrdinario = precioHora;
   else {
-    const pagaJC = baseJC + (c.pagas?.incluyePlus ? plusJC : 0) + (c.pagas?.incluyeAntiguedad ? impAntJC : 0);
-    const anualJC = (baseJC + plusJC + impAntJC + compJornada) * 12 + pagaJC * nPagas;
+    const jFull = tramosJ.length ? num(tramosJ[0].importe) : 0;
+    const pagaJC = baseJC + (c.pagas?.incluyePlus ? num(cat.plusConvenio) : 0) + (c.pagas?.incluyeAntiguedad ? impAntJC : 0) + cargoJC + (c.complementoJornada?.enPagas ? jFull : 0);
+    const anualJC = (baseJC + cargoJC + impAntJC + jFull) * 12 + num(cat.plusConvenio) * (c.plusMeses?.length || 12) + pagaJC * nPagas;
     precioOrdinario = anualJC / jornadaAnual;
   }
   const precioHE = num(v.precioHoraExtra) || r2(precioOrdinario * (1 + num(c.recargoHoraExtra) / 100));
@@ -353,7 +440,7 @@ function calcularNomina(ctx) {
   const baseAT = r2(clamp(remuneracionTotal + importeHE + importeHEFM, bMin, bMax));
 
   // Cotización adicional de solidaridad (exceso sobre la base máxima)
-  let solidaridad = 0;
+  let solidaridad = 0, solidaridadTrab = 0;
   const exceso = remuneracionTotal + importeHE + importeHEFM - bMax;
   if (exceso > 0) {
     let desde = 0;
@@ -361,6 +448,7 @@ function calcularNomina(ctx) {
       const tope = t.hasta == null ? Infinity : bMax * (t.hasta - 1);
       if (exceso <= desde) break;
       solidaridad += (Math.min(exceso, tope) - desde) * t.tipo / 100;
+      solidaridadTrab += (Math.min(exceso, tope) - desde) * (t.trab ?? t.tipo / 6) / 100;
       desde = tope;
     }
   }
@@ -385,7 +473,7 @@ function calcularNomina(ctx) {
     { concepto: "FOGASA", base: baseAT, tipo: T.fogasa.emp, importe: r2(baseAT * T.fogasa.emp / 100) },
   ].filter(l => l.importe);
   if (solidaridad) {
-    const st = r2(solidaridad * p.solidaridadParteTrabajador);
+    const st = r2(solidaridadTrab);
     cotTrabajador.push({ concepto: "Cotización de solidaridad", base: r2(exceso), tipo: null, importe: st });
     cotEmpresa.push({ concepto: "Cotización de solidaridad", base: r2(exceso), tipo: null, importe: r2(solidaridad - st) });
   }
@@ -400,6 +488,10 @@ function calcularNomina(ctx) {
     retribucionAnual, cotizacionesAnuales,
     situacion: num(e.situacionFamiliar, 3), hijos: num(e.hijos), hijosMenores3: num(e.hijosMenores3),
     hijosCompartidos: !!e.hijosCompartidos, discapacidad: num(e.discapacidad), temporal: e.tipoContrato === "temporal",
+    discapacidadAyuda: !!e.discapacidadAyuda, anioNacimiento: num(e.anioNacimiento), anioCalculo: anio,
+    hijosDisc33: num(e.hijosDisc33), hijosDisc65: num(e.hijosDisc65),
+    ascendientes65: num(e.ascendientes65), ascendientes75: num(e.ascendientes75), ascendientesDisc33: num(e.ascendientesDisc33), ascendientesDisc65: num(e.ascendientesDisc65),
+    movilidadGeografica: !!e.movilidadGeografica, pensionCompensatoria: num(e.pensionCompensatoria), anualidadesAlimentos: num(e.anualidadesAlimentos), prestamoVivienda: !!e.prestamoVivienda,
   }, p);
   const tipoIRPF = (e.irpfManual !== undefined && e.irpfManual !== "" && e.irpfManual !== null) ? num(e.irpfManual) : irpfCalc.tipo;
   const importeIRPF = r2(baseIRPF * tipoIRPF / 100);
@@ -437,7 +529,7 @@ function horasDesdePayload(payload) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PARAMETROS_LEGALES, CONVENIOS_EJEMPLO, CONVENIO_ENSENANZA_NO_REGLADA, convenioParaAnio, calcularNomina, calcularTipoIRPF, aplicarEscala, reduccionRendimientosTrabajo, periodosAntiguedad, horasDesdePayload, parametrosAnio };
+  module.exports = { PARAMETROS_LEGALES, CONVENIOS_EJEMPLO, CONVENIO_ENSENANZA_NO_REGLADA, CONVENIO_ENSENANZA_REGLADA, convenioParaAnio, calcularNomina, calcularTipoIRPF, aplicarEscala, reduccionRendimientosTrabajo, periodosAntiguedad, horasDesdePayload, parametrosAnio };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -460,6 +552,34 @@ const OCUPACIONES_CNO = [
   ["23211016", "Consultores / asesores de formación"], ["23211034", "Formadores de formadores"],
   ["23211052", "Pedagogos"], ["23111026", "Profesores de educación de adultos"],
   ["23241015", "Profesores de actividades artístico-manuales"], ["23261011", "Profesionales de la educación ambiental"],
+];
+// Claves de contrato de trabajo (Sistema RED, tabla T-19)
+const CLAVES_CONTRATO = [
+  ["100", "Indefinido tiempo completo – ordinario"], ["109", "Indefinido t. completo – transformación contrato temporal (fomento)"],
+  ["130", "Indefinido t. completo – discapacitados"], ["150", "Indefinido t. completo – fomento contratación indefinida inicial"],
+  ["189", "Indefinido t. completo – transformación contrato temporal"], ["200", "Indefinido tiempo parcial – ordinario"],
+  ["209", "Indefinido t. parcial – transformación contrato temporal (fomento)"], ["230", "Indefinido t. parcial – discapacitados"],
+  ["250", "Indefinido t. parcial – fomento contratación indefinida inicial"], ["289", "Indefinido t. parcial – transformación contrato temporal"],
+  ["300", "Indefinido fijo discontinuo"], ["389", "Fijo discontinuo – transformación contrato temporal"],
+  ["402", "Duración determinada t. completo – circunstancias de la producción"], ["410", "Duración determinada t. completo – sustitución (interinidad)"],
+  ["420", "Duración determinada t. completo – prácticas"], ["421", "Temporal t. completo – formación en alternancia"],
+  ["430", "Duración determinada t. completo – discapacitados"], ["441", "Duración determinada t. completo – relevo"],
+  ["500", "Temporal tiempo parcial ordinario"], ["502", "Duración determinada t. parcial – circunstancias de la producción"],
+  ["510", "Duración determinada t. parcial – sustitución (interinidad)"], ["520", "Duración determinada t. parcial – prácticas"],
+  ["521", "Temporal t. parcial – formación en alternancia"], ["530", "Duración determinada t. parcial – discapacitados"],
+  ["540", "Duración determinada t. parcial – jubilación parcial"], ["541", "Duración determinada t. parcial – relevo"],
+];
+// Niveles formativos para contratos (Contrat@)
+const NIVELES_FORMATIVOS = [
+  ["80", "Sin estudios"], ["11", "Estudios primarios incompletos"], ["12", "Estudios primarios completos"],
+  ["21", "Programas de formación e inserción sin título de 1.ª etapa de secundaria (+300 h)"], ["22", "1.ª etapa de secundaria sin título de graduado"],
+  ["23", "1.ª etapa de secundaria con título de graduado escolar o equivalente"], ["31", "Programas de formación que precisan título de 1.ª etapa de secundaria (+300 h)"],
+  ["33", "Grado medio de FP, artes plásticas y diseño y deportivas"], ["34", "Grado medio de música y danza"],
+  ["32", "Bachillerato"], ["41", "Programas de formación que precisan título de 2.ª etapa de secundaria (+300 h)"],
+  ["52", "Títulos propios universitarios que precisan bachiller (2 y más años)"], ["51", "Grado superior de FP, artes plásticas y diseño y deportivas"],
+  ["53", "Programas de formación que precisan FP de grado superior (+300 h)"], ["54", "Universitarios de primer ciclo / diplomados"],
+  ["55", "Licenciados (1.º y 2.º ciclo)"], ["56", "Estudios oficiales de especialización profesional"],
+  ["59", "Grado universitario"], ["60", "Máster universitario oficial"], ["61", "Doctorado"],
 ];
 // Causas de baja del certificado de empresa (mod. PR-AIN/01-277)
 const CAUSAS_BAJA = [
@@ -491,12 +611,13 @@ function nomCargar() {
   if (NOM) return NOM;
   try { NOM = JSON.parse(localStorage.getItem(NOM_KEY) || "null"); } catch { NOM = null; }
   if (!NOM) NOM = nomDatosIniciales();
-  // Migración: el convenio 1 de ejemplo pasa a ser el de Enseñanza no reglada
-  const i = NOM.convenios.findIndex(c => c.id === "conv1" && c.ejemplo);
-  if (i >= 0) {
-    NOM.convenios[i] = JSON.parse(JSON.stringify(CONVENIO_ENSENANZA_NO_REGLADA));
-    NOM.empleados.filter(e => e.convenioId === "conv1").forEach(e => { e.convenioId = CONVENIO_ENSENANZA_NO_REGLADA.id; e.categoriaId = CONVENIO_ENSENANZA_NO_REGLADA.categorias[0].id; });
-  }
+  // Migración: los convenios de ejemplo pasan a ser los reales
+  [["conv1", CONVENIO_ENSENANZA_NO_REGLADA], ["conv2", CONVENIO_ENSENANZA_REGLADA]].forEach(([viejo, real]) => {
+    const i = NOM.convenios.findIndex(c => c.id === viejo && c.ejemplo);
+    if (i < 0) return;
+    NOM.convenios[i] = JSON.parse(JSON.stringify(real));
+    NOM.empleados.filter(e => e.convenioId === viejo).forEach(e => { e.convenioId = real.id; e.categoriaId = real.categorias[0].id; });
+  });
   if (!NOM.empresa.cif && !NOM.empresa.ccc) NOM.empresa = { ...EMPRESA_DEFECTO, ...Object.fromEntries(Object.entries(NOM.empresa).filter(([k, v]) => v && !(k === "nombre" && v === "Tunivers Formación"))), atep: EMPRESA_DEFECTO.atep };
   return NOM;
 }
@@ -734,7 +855,7 @@ function nomImprimirRecibo(r = nomUltimo) {
   </style></head><body>
   <table class="cab"><tr>
     <td><b>Empresa</b>${esc(emp.nombre)}<br/>${esc(emp.domicilio)}${emp.localidad ? `, ${esc(emp.cp)} ${esc(emp.localidad)} (${esc(emp.provincia)})` : ""}<br/>CIF: ${esc(emp.cif)}<br/>CCC: ${esc(emp.regimen)} ${esc(emp.ccc)}</td>
-    <td><b>Trabajador/a</b>${esc(e.nombre)}<br/>NIF: ${esc(e.nif)} · Nº afiliación SS: ${esc(e.naf)}<br/>Categoría: ${esc(r.categoria.nombre)} · Grupo de cotización: ${esc(r.grupoCotizacion ?? r.categoria.grupoCotizacion)}<br/>Antigüedad: ${esc(e.fechaAntiguedad || "")} · Contrato: ${esc(e.tipoContrato || "")}${num(e.jornadaPct, 100) < 100 ? ` · Jornada ${num(e.jornadaPct)} %` : ""}<br/>Convenio: ${esc(r.convenio.nombre)}${r.convenio.codigo ? ` (${esc(r.convenio.codigo)})` : ""}</td>
+    <td><b>Trabajador/a</b>${esc(e.nombre)}<br/>NIF: ${esc(e.nif)} · Nº afiliación SS: ${esc(e.naf)}<br/>Categoría: ${esc(r.categoria.nombre)} · Grupo de cotización: ${esc(r.grupoCotizacion ?? r.categoria.grupoCotizacion)}<br/>Antigüedad: ${esc(e.fechaAntiguedad || "")} · Contrato: ${esc(e.contratoClave || e.tipoContrato || "")}${num(e.jornadaPct, 100) < 100 ? ` · Jornada ${num(e.jornadaPct)} %` : ""}<br/>Convenio: ${esc(r.convenio.nombre)}${r.convenio.codigo ? ` (${esc(r.convenio.codigo)})` : ""}</td>
   </tr></table>
   <div class="per"><strong>Periodo de liquidación:</strong> del 01/${String(r.mes).padStart(2, "0")}/${r.anio} al ${ultimo}/${String(r.mes).padStart(2, "0")}/${r.anio} · <strong>Total días:</strong> ${r.dias}</div>
   <table class="det">
@@ -807,19 +928,34 @@ function nomFormEmpleado() {
       <label>Fecha de alta en la empresa<input name="fechaAlta" type="date" value="${esc(e.fechaAlta)}"/></label>
       <label>Fecha de antigüedad<input name="fechaAntiguedad" type="date" value="${esc(e.fechaAntiguedad)}"/></label>
       <label>${esc(conv?.antiguedad?.nombre || "Antigüedad")}: tramos reconocidos <small>(si no se calcula por fecha)</small><input name="periodosAntiguedad" type="number" min="0" value="${esc(e.periodosAntiguedad || 0)}"/></label>
-      <label>Contrato${sel("tipoContrato", [["indefinido", "Indefinido"], ["temporal", "Temporal"]], e.tipoContrato)}</label>
-      <label>Tipo y duración del contrato <small>(p. ej. 100 · indefinido)</small><input name="contratoDescripcion" value="${esc(e.contratoDescripcion)}"/></label>
+      <label class="full">Clave de contrato (T-19)${sel("contratoClave", [["", "—"], ...CLAVES_CONTRATO.map(([k, d]) => [k, `${k} · ${d}`])], e.contratoClave)}</label>
+      <input type="hidden" name="tipoContrato" value="${esc(e.tipoContrato || "indefinido")}"/>
+      <label>Duración del contrato <small>(temporales: fecha fin o meses)</small><input name="contratoDescripcion" value="${esc(e.contratoDescripcion)}"/></label>
+      <label>Nivel formativo${sel("nivelFormativo", [["", "—"], ...NIVELES_FORMATIVOS.map(([k, d]) => [k, `${k} · ${d}`])], e.nivelFormativo)}</label>
       <label class="full">Ocupación (CNO-11)<input name="ocupacion" list="nom-cno" value="${esc(e.ocupacion)}" placeholder="23291010 Formadores de formación no reglada"/>
         <datalist id="nom-cno">${OCUPACIONES_CNO.map(([c, d]) => `<option value="${c} ${esc(d)}"></option>`).join("")}</datalist></label>
       <label>Modalidad de pago${sel("modalidad", [["mensual", "Salario mensual"], ["horas", "Por horas trabajadas"]], e.modalidad)}</label>
       <label>% de jornada<input name="jornadaPct" type="number" step="0.01" min="0" max="100" value="${esc(e.jornadaPct)}"/></label>
       <label>Complemento personal (€/mes)<input name="complementoPersonal" type="number" step="0.01" value="${esc(e.complementoPersonal || 0)}"/></label>
       <label>Prorratear pagas extra${sel("prorrateo", [["", "Según convenio"], ["1", "Sí"]], e.prorrateo ? "1" : "")}</label>
-      <label class="full">Situación familiar (IRPF)${sel("situacionFamiliar", [[1, "1 · Monoparental con hijos"], [2, "2 · Cónyuge a cargo (rentas < 1.500 €)"], [3, "3 · Otras situaciones"]], e.situacionFamiliar)}</label>
-      <label>Nº de hijos<input name="hijos" type="number" min="0" value="${esc(e.hijos)}"/></label>
-      <label>De ellos, menores de 3 años<input name="hijosMenores3" type="number" min="0" value="${esc(e.hijosMenores3)}"/></label>
-      <label>Hijos compartidos con otro progenitor${sel("hijosCompartidos", [["", "No"], ["1", "Sí (por mitad)"]], e.hijosCompartidos ? "1" : "")}</label>
+      <div class="full section-title" style="margin-top:8px">Datos para el IRPF (modelo 145)</div>
+      <label class="full">Situación familiar${sel("situacionFamiliar", [[1, "1 · Monoparental con hijos"], [2, "2 · Cónyuge a cargo (rentas < 1.500 €)"], [3, "3 · Otras situaciones"]], e.situacionFamiliar)}</label>
+      <label>Año de nacimiento<input name="anioNacimiento" type="number" value="${esc(e.anioNacimiento)}"/></label>
       <label>Discapacidad${sel("discapacidad", [[0, "No"], [33, "≥ 33 % y < 65 %"], [65, "≥ 65 %"]], e.discapacidad)}</label>
+      <label>Ayuda de terceros / movilidad reducida${sel("discapacidadAyuda", [["", "No"], ["1", "Sí"]], e.discapacidadAyuda ? "1" : "")}</label>
+      <label>Movilidad geográfica <small>(traslado por aceptar el puesto)</small>${sel("movilidadGeografica", [["", "No"], ["1", "Sí"]], e.movilidadGeografica ? "1" : "")}</label>
+      <label>Hijos/descendientes &lt; 25 años que conviven<input name="hijos" type="number" min="0" value="${esc(e.hijos)}"/></label>
+      <label>De ellos, menores de 3 años<input name="hijosMenores3" type="number" min="0" value="${esc(e.hijosMenores3)}"/></label>
+      <label>Con discapacidad ≥ 33 % y &lt; 65 %<input name="hijosDisc33" type="number" min="0" value="${esc(e.hijosDisc33 || 0)}"/></label>
+      <label>Con discapacidad ≥ 65 % o ayuda<input name="hijosDisc65" type="number" min="0" value="${esc(e.hijosDisc65 || 0)}"/></label>
+      <label>Hijos computados por entero${sel("hijosCompartidos", [["", "Sí"], ["1", "No (por mitad, con otro progenitor)"]], e.hijosCompartidos ? "1" : "")}</label>
+      <label>Ascendientes que conviven, 65-75 años<input name="ascendientes65" type="number" min="0" value="${esc(e.ascendientes65 || 0)}"/></label>
+      <label>Ascendientes que conviven, &gt; 75 años<input name="ascendientes75" type="number" min="0" value="${esc(e.ascendientes75 || 0)}"/></label>
+      <label>Ascendientes con discapacidad ≥ 33 %<input name="ascendientesDisc33" type="number" min="0" value="${esc(e.ascendientesDisc33 || 0)}"/></label>
+      <label>Ascendientes con discapacidad ≥ 65 % o ayuda<input name="ascendientesDisc65" type="number" min="0" value="${esc(e.ascendientesDisc65 || 0)}"/></label>
+      <label>Pensión compensatoria al cónyuge (€/año)<input name="pensionCompensatoria" type="number" step="0.01" value="${esc(e.pensionCompensatoria || 0)}"/></label>
+      <label>Anualidades por alimentos a hijos (€/año)<input name="anualidadesAlimentos" type="number" step="0.01" value="${esc(e.anualidadesAlimentos || 0)}"/></label>
+      <label>Préstamo vivienda habitual con deducción${sel("prestamoVivienda", [["", "No"], ["1", "Sí"]], e.prestamoVivienda ? "1" : "")}</label>
       <label>IRPF fijo (%) <small>(vacío = calcular)</small><input name="irpfManual" type="number" step="0.01" value="${esc(e.irpfManual)}"/></label>
       <label class="full">Otros conceptos fijos <small>(uno por línea: nombre; importe; salarial|no salarial)</small>
         <textarea name="conceptos" rows="2">${esc((e.conceptos || []).map(k => `${k.nombre}; ${k.importe}; ${k.salarial === false ? "no salarial" : "salarial"}`).join("\n"))}</textarea></label>
@@ -855,6 +991,11 @@ function nomGuardarEmpleado() {
     situacionFamiliar: num(v.situacionFamiliar, 3), hijos: num(v.hijos), hijosMenores3: num(v.hijosMenores3),
     discapacidad: num(v.discapacidad), prorrateo: !!v.prorrateo, hijosCompartidos: !!v.hijosCompartidos,
     periodosAntiguedad: num(v.periodosAntiguedad), grupoCotizacion: v.grupoCotizacion === "" ? "" : num(v.grupoCotizacion),
+    tipoContrato: /^[45]/.test(v.contratoClave || "") ? "temporal" : v.contratoClave ? "indefinido" : v.tipoContrato,
+    anioNacimiento: num(v.anioNacimiento) || "", discapacidadAyuda: !!v.discapacidadAyuda, movilidadGeografica: !!v.movilidadGeografica,
+    hijosDisc33: num(v.hijosDisc33), hijosDisc65: num(v.hijosDisc65), ascendientes65: num(v.ascendientes65), ascendientes75: num(v.ascendientes75),
+    ascendientesDisc33: num(v.ascendientesDisc33), ascendientesDisc65: num(v.ascendientesDisc65),
+    pensionCompensatoria: num(v.pensionCompensatoria), anualidadesAlimentos: num(v.anualidadesAlimentos), prestamoVivienda: !!v.prestamoVivienda,
     conceptos: nomParseConceptos(v.conceptos),
   };
   const i = NOM.empleados.findIndex(x => x.id === e.id);
@@ -895,16 +1036,20 @@ function nomRenderConvenios() {
       <label>Importe anual por tramo (€) <small>(si la categoría no fija uno)</small><input name="antImporteAnual" type="number" step="0.01" value="${esc(ant.importeAnual || "")}"/></label>
       <label>Máximo de periodos <small>(0 = sin límite)</small><input name="antMax" type="number" min="0" value="${esc(ant.maxPeriodos || 0)}"/></label>
       <label>Nombre del plus<input name="nombrePlus" value="${esc(c.nombrePlus || "Plus convenio")}"/></label>
+      <label>Meses en que se cobra el plus <small>(vacío = todos)</small><input name="plusMeses" value="${esc((c.plusMeses || []).join(","))}"/></label>
+      <label>Nombre del complemento de cargo<input name="nombreCargo" value="${esc(c.nombreCargo || "Complemento de cargo")}"/></label>
       <label>Recargo hora extra (%)<input name="recargoHoraExtra" type="number" step="0.01" value="${esc(c.recargoHoraExtra || 0)}"/></label>
       <label class="full">Complemento según % de jornada (12 pagas)
         <input name="cjNombre" value="${esc(c.complementoJornada?.nombre || "")}" placeholder="Nombre, p. ej. Complemento de dedicación"/></label>
       <label class="full">Tramos <small>(uno por línea: % mínimo de jornada; importe mensual)</small>
         <textarea name="cjTramos" rows="3">${esc((c.complementoJornada?.tramos || []).map(t => `${t.minPct}; ${t.importe}`).join("\n"))}</textarea></label>
+      <label>Por debajo del tramo mínimo<select name="cjProp"><option value="">No se cobra / último tramo</option><option value="1" ${c.complementoJornada?.proporcionalBajoMinimo ? "selected" : ""}>Proporcional a la jornada</option></select></label>
+      <label>Entra en las pagas extra<select name="cjPagas"><option value="">No</option><option value="1" ${c.complementoJornada?.enPagas ? "selected" : ""}>Sí</option></select></label>
       <div class="full">
         <div class="section-title" style="margin-top:6px">Tablas salariales</div>
         <div class="nom-hint">Salario anual: se divide entre 12 + nº de pagas. Si está vacío se usa el salario mensual. €/hora solo para pagos por horas a precio fijo (vacío = proporcional al salario).${otrosAnios.length ? ` Incluye también las tablas de ${otrosAnios.join(" y ")}, que se aplican automáticamente a las nóminas de esos años.` : ""}</div>
         <div class="nom-scroll"><table class="nom-table nom-edit">
-          <thead><tr><th>Categoría</th><th>Grupo cot.</th><th>Salario anual</th><th>Salario mensual</th><th>Plus mensual</th><th>€/mes por tramo</th><th>Máx. % s/ base</th><th>Jornada anual</th><th>€/hora</th><th></th></tr></thead>
+          <thead><tr><th>Categoría</th><th>Grupo cot.</th><th>Salario anual</th><th>Salario mensual</th><th>Plus mensual</th><th>Cargo mensual</th><th>€/mes por tramo</th><th>Máx. % s/ base</th><th>Jornada anual</th><th>Horas lectivas/año</th><th>€/hora</th><th></th></tr></thead>
           <tbody>${c.categorias.map(k => nomFilaCategoria(k)).join("")}</tbody>
         </table></div>
         <button type="button" class="btn-mini" onclick="nomAddCategoria(${ci})">+ Añadir categoría</button>
@@ -928,9 +1073,11 @@ function nomFilaCategoria(k) {
     <td><input name="canual" type="number" step="0.01" value="${val(k.salarioAnual)}"/></td>
     <td><input name="cbase" type="number" step="0.01" value="${val(k.salarioBase)}"/></td>
     <td><input name="cplus" type="number" step="0.01" value="${val(k.plusConvenio)}"/></td>
+    <td><input name="ccargo" type="number" step="0.01" value="${val(k.complementoCargo)}"/></td>
     <td><input name="cant" type="number" step="0.01" value="${val(k.importeAntiguedad)}"/></td>
     <td><input name="cmaxpct" type="number" step="0.01" value="${val(k.maxPctAntiguedad)}"/></td>
     <td><input name="cjornada" type="number" step="0.01" value="${val(k.jornadaAnual)}"/></td>
+    <td><input name="clectiva" type="number" step="0.01" value="${val(k.jornadaLectivaAnual)}"/></td>
     <td><input name="chora" type="number" step="0.01" value="${val(k.precioHora)}"/></td>
     <td><button type="button" class="btn-mini" onclick="this.closest('tr').remove()">✕</button></td>
   </tr>`;
@@ -950,7 +1097,8 @@ function nomGuardarConvenio(ci) {
     const k = {
       id: tr.dataset.id, nombre: g("cnombre"), grupoCotizacion: num(g("cgrupo"), 7),
       salarioAnual: num(g("canual")), salarioBase: num(g("cbase")), plusConvenio: num(g("cplus")),
-      importeAntiguedad: num(g("cant")), maxPctAntiguedad: num(g("cmaxpct")), jornadaAnual: num(g("cjornada")), precioHora: num(g("chora")),
+      complementoCargo: num(g("ccargo")), importeAntiguedad: num(g("cant")), maxPctAntiguedad: num(g("cmaxpct")),
+      jornadaAnual: num(g("cjornada")), jornadaLectivaAnual: num(g("clectiva")), precioHora: num(g("chora")),
     };
     if (tr.dataset.gp) k.grupoProfesional = num(tr.dataset.gp);
     return k;
@@ -960,9 +1108,10 @@ function nomGuardarConvenio(ci) {
   NOM.convenios[ci] = {
     ...c,
     nombre: v.nombre, codigo: v.codigo, anioTablas: num(v.anioTablas), jornadaAnual: num(v.jornadaAnual, 1780), nombrePlus: v.nombrePlus, recargoHoraExtra: num(v.recargoHoraExtra),
+    plusMeses: String(v.plusMeses || "").split(/[,\s]+/).map(Number).filter(m => m >= 1 && m <= 12), nombreCargo: v.nombreCargo,
     pagas: { numero: num(v.pagasNumero), meses: v.pagasMeses.split(/[,\s]+/).map(Number).filter(m => m >= 1 && m <= 12), prorrateo: !!v.pagasProrrateo, incluyePlus: !!v.pagasPlus, incluyeAntiguedad: !!v.pagasAnt },
     antiguedad: { ...c.antiguedad, nombre: v.antNombre, manual: !!v.antManual, periodoAnios: num(v.antPeriodo), importeAnual: num(v.antImporteAnual), maxPeriodos: num(v.antMax) },
-    complementoJornada: tramos.length ? { nombre: v.cjNombre || "Complemento por jornada", tramos } : null,
+    complementoJornada: tramos.length ? { nombre: v.cjNombre || "Complemento por jornada", tramos, proporcionalBajoMinimo: !!v.cjProp, enPagas: !!v.cjPagas } : null,
     conceptos: nomParseConceptos(v.conceptos),
     categorias,
     ejemplo: false,
@@ -1062,7 +1211,7 @@ function nomImprimirCertificado() {
   ${campo("Clave CNAE", em.cnae)}${campo("Denominación CNAE", em.cnaeDenominacion)}${campo("CIF", em.cif)}</div>
   <h2>2. Datos de la persona trabajadora</h2>
   <div class="g">${campo("Nombre y apellidos", e.nombre)}${campo("DNI o NIE", e.nif)}${campo("Nº afiliación SS", e.naf)}
-  ${campo("Grupo de cotización", e.grupoCotizacion || cat?.grupoCotizacion)}${campo("Contrato: tipo y duración", e.contratoDescripcion || e.tipoContrato)}${campo("Fecha alta en empresa", fmtF(e.fechaAlta))}
+  ${campo("Grupo de cotización", e.grupoCotizacion || cat?.grupoCotizacion)}${campo("Contrato: tipo y duración", [e.contratoClave ? `${e.contratoClave} ${(CLAVES_CONTRATO.find(([k]) => k === e.contratoClave) || [])[1] || ""}` : e.tipoContrato, e.contratoDescripcion].filter(Boolean).join(" · "))}${campo("Fecha alta en empresa", fmtF(e.fechaAlta))}
   ${campo("Profesión / categoría (CNO)", e.ocupacion || cat?.nombre)}${campo("Categoría del convenio", cat?.nombre)}${campo("Jornada", e.modalidad === "horas" ? "Por horas" : `${num(e.jornadaPct, 100)} %`)}
   ${campo("Código causa", v.causa)}${campo("Causa", causa?.[1])}${campo("Fecha suspensión / extinción", fmtF(v.fechaBaja))}
   ${campo("Fecha fin suspensión", fmtF(v.fechaFinSuspension))}</div>
