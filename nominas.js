@@ -65,7 +65,8 @@ const PARAMETROS_LEGALES = {
 // ── CONVENIOS ───────────────────────────────────────────────────
 // X Convenio colectivo de Enseñanza y formación no reglada
 // (código 99008825011994, BOE-A-2025-14198, 9/7/2025, vigente hasta 31/12/2027).
-// - Salario base anual (anexo 1) en 14 pagas, o 12 si se pacta (art. 29).
+// - Salario base anual (anexo 1) en 14 pagas, o 12 si se pacta (art. 29). En la empresa
+//   las pagas extra se prorratean en las 12 mensualidades.
 // - Jornada anual máxima: grupo I 1.446 h; grupos II, III y IV 1.715 h (art. 19).
 // - Complemento de dedicación mensual en 12 pagas según % de jornada (art. 32).
 // - CPP: tramo por cada 3 años con la formación acreditada (art. 33); máximo
@@ -116,7 +117,7 @@ const CONVENIO_ENSENANZA_NO_REGLADA = (() => {
     anioTablas: 2026,
     jornadaAnual: 1715,
     nombrePlus: "Plus convenio",
-    pagas: { numero: 2, meses: [6, 12], prorrateo: false, incluyePlus: true, incluyeAntiguedad: true },
+    pagas: { numero: 2, meses: [6, 12], prorrateo: true, incluyePlus: true, incluyeAntiguedad: true },
     antiguedad: { nombre: "Complemento de perfeccionamiento profesional (CPP)", manual: true, periodoAnios: 3, importe: 0, importeAnual: 496.64, maxPeriodos: 0 },
     complementoJornada: { nombre: "Complemento de dedicación", tramos: tramos(dedicacion[2026]) },
     recargoHoraExtra: 0,
@@ -133,8 +134,8 @@ const CONVENIO_ENSENANZA_NO_REGLADA = (() => {
 // o enseñanza reglada sin ningún nivel concertado ni subvencionado
 // (código 99001925011986, BOE-A-2024-15501, 26/7/2024). Tablas 2026 del anexo III.
 // - 15 pagas: 12 + 3 extraordinarias (salario base, CPP y cargo), antes del 1 de julio,
-//   antes del 22 de diciembre y la 3.ª dentro del año (art. 68). Por defecto: junio,
-//   septiembre y diciembre.
+//   antes del 22 de diciembre y la 3.ª dentro del año (art. 68). En la empresa se
+//   prorratean entre las 12 mensualidades, como permite el mismo artículo.
 // - Plus de productividad docente en 11 mensualidades (art. 71): todas menos agosto.
 // - Complemento de dedicación en 15 pagas: íntegro con jornada ≥ 60 %, proporcional
 //   por debajo (art. 69).
@@ -185,7 +186,7 @@ const CONVENIO_ENSENANZA_REGLADA = (() => {
     nombrePlus: "Plus de productividad docente",
     plusMeses: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12],
     nombreCargo: "Complemento temporal de cargo",
-    pagas: { numero: 3, meses: [6, 9, 12], prorrateo: false, incluyePlus: false, incluyeAntiguedad: true },
+    pagas: { numero: 3, meses: [6, 9, 12], prorrateo: true, incluyePlus: false, incluyeAntiguedad: true },
     antiguedad: { nombre: "Complemento de perfeccionamiento profesional (CPP)", manual: true, periodoAnios: 5, importe: 0, maxPeriodos: 0 },
     complementoJornada: { nombre: "Complemento de dedicación", tramos: [{ minPct: 60, importe: 124.03 }], proporcionalBajoMinimo: true, enPagas: true },
     recargoHoraExtra: 0,
@@ -604,6 +605,7 @@ function nomDatosIniciales() {
     empleados: [],
     parametros: {},
     historico: {},
+    migraciones: ["pagas-prorrateadas"],
   };
 }
 
@@ -618,6 +620,12 @@ function nomCargar() {
     NOM.convenios[i] = JSON.parse(JSON.stringify(real));
     NOM.empleados.filter(e => e.convenioId === viejo).forEach(e => { e.convenioId = real.id; e.categoriaId = real.categorias[0].id; });
   });
+  // Migración: la empresa prorratea las pagas extra en los dos convenios
+  NOM.migraciones = NOM.migraciones || [];
+  if (!NOM.migraciones.includes("pagas-prorrateadas")) {
+    NOM.convenios.filter(c => [CONVENIO_ENSENANZA_NO_REGLADA.id, CONVENIO_ENSENANZA_REGLADA.id].includes(c.id)).forEach(c => { c.pagas.prorrateo = true; });
+    NOM.migraciones.push("pagas-prorrateadas");
+  }
   if (!NOM.empresa.cif && !NOM.empresa.ccc) NOM.empresa = { ...EMPRESA_DEFECTO, ...Object.fromEntries(Object.entries(NOM.empresa).filter(([k, v]) => v && !(k === "nombre" && v === "Tunivers Formación"))), atep: EMPRESA_DEFECTO.atep };
   return NOM;
 }
