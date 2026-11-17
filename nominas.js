@@ -114,6 +114,9 @@ const CONVENIO_ENSENANZA_NO_REGLADA = (() => {
     id: "enr-x",
     nombre: "X Convenio colectivo de Enseñanza y formación no reglada",
     codigo: "99008825011994",
+    boeReferencia: "BOE-A-2025-14198",
+    vigenciaHasta: "2027-12-31",
+    boeClaves: ["enseñanza y formación no reglada"],
     anioTablas: 2026,
     jornadaAnual: 1715,
     nombrePlus: "Plus convenio",
@@ -181,6 +184,9 @@ const CONVENIO_ENSENANZA_REGLADA = (() => {
     id: "er-xii",
     nombre: "XII Convenio de enseñanza privada reglada sin concierto (anexo III)",
     codigo: "99001925011986",
+    boeReferencia: "BOE-A-2024-15501",
+    vigenciaHasta: "2026-12-31",
+    boeClaves: ["enseñanza privada de régimen general", "sin ningún nivel concertado"],
     anioTablas: 2026,
     jornadaAnual: 1724,
     nombrePlus: "Plus de productividad docente",
@@ -325,6 +331,11 @@ function convenioParaAnio(c, anio) {
 function calcularNomina(ctx) {
   const { empleado: e, params: p, empresa = {}, anio, mes } = ctx;
   const c = convenioParaAnio(ctx.convenio, anio);
+  const avisosCalculo = [];
+  const ultTablas = Math.max(num(ctx.convenio.anioTablas), ...Object.keys(ctx.convenio.porAnio || {}).map(Number).filter(Boolean));
+  if (ultTablas && anio > ultTablas) avisosCalculo.push(`No hay tablas salariales de ${anio} en el convenio: se han usado las de ${ultTablas}. Revisa si se ha publicado una actualización.`);
+  if (ctx.convenio.vigenciaHasta && `${anio}-${String(mes).padStart(2, "0")}-01` > ctx.convenio.vigenciaHasta) avisosCalculo.push(`El convenio venció el ${ctx.convenio.vigenciaHasta.split("-").reverse().join("/")}: se aplica prorrogado hasta que haya uno nuevo.`);
+  if (!PARAMETROS_LEGALES[anio] && p === PARAMETROS_LEGALES[Math.max(...Object.keys(PARAMETROS_LEGALES).map(Number))]) avisosCalculo.push(`No hay parámetros de cotización de ${anio}: se han usado los del último año disponible.`);
   const v = ctx.vars || {};
   const cat = (c.categorias || []).find(x => x.id === e.categoriaId);
   if (!cat) throw new Error("El empleado no tiene una categoría válida del convenio.");
@@ -514,7 +525,7 @@ function calcularNomina(ctx) {
     bases: { remuneracionMensual, remuneracionTotal, baseCC, baseAT, importeHE, importeHEFM, bMin, bMax, prorrataNoIncluida },
     cotEmpresa, totalCotEmp,
     costeEmpresa: r2(totalDevengado + totalCotEmp),
-    precioHE, generado: new Date().toISOString(),
+    precioHE, avisos: avisosCalculo, generado: new Date().toISOString(),
   };
 }
 
@@ -620,6 +631,11 @@ function nomCargar() {
     NOM.convenios[i] = JSON.parse(JSON.stringify(real));
     NOM.empleados.filter(e => e.convenioId === viejo).forEach(e => { e.convenioId = real.id; e.categoriaId = real.categorias[0].id; });
   });
+  // Datos para detectar actualizaciones (vigencia y búsqueda en el BOE)
+  [CONVENIO_ENSENANZA_NO_REGLADA, CONVENIO_ENSENANZA_REGLADA].forEach(real => {
+    const c = NOM.convenios.find(x => x.id === real.id);
+    if (c) ["boeReferencia", "vigenciaHasta", "boeClaves"].forEach(k => { if (c[k] == null) c[k] = real[k]; });
+  });
   // Migración: la empresa prorratea las pagas extra en los dos convenios
   NOM.migraciones = NOM.migraciones || [];
   if (!NOM.migraciones.includes("pagas-prorrateadas")) {
@@ -638,16 +654,20 @@ function nomUid(pref) { return pref + "-" + Date.now().toString(36) + Math.rando
 
 function renderNominas() {
   nomCargar();
-  const subs = [["calcular", "Calcular nómina"], ["empleados", "Empleados"], ["convenios", "Convenios"], ["certificado", "Certificado de empresa"], ["parametros", "Empresa y parámetros"]];
+  const nAlertas = typeof oblContarAlertas === "function" ? oblContarAlertas() : 0;
+  const subs = [["calcular", "Calcular nómina"], ["obligaciones", `Obligaciones y avisos${nAlertas ? ` (${nAlertas})` : ""}`], ["empleados", "Empleados"], ["convenios", "Convenios"], ["certificado", "Certificado de empresa"], ["parametros", "Empresa y parámetros"]];
   let cuerpo = "";
   if (nomVista === "calcular") cuerpo = nomRenderCalcular();
   else if (nomVista === "empleados") cuerpo = nomRenderEmpleados();
   else if (nomVista === "convenios") cuerpo = nomRenderConvenios();
   else if (nomVista === "certificado") cuerpo = nomRenderCertificado();
+  else if (nomVista === "obligaciones") cuerpo = oblRender();
   else cuerpo = nomRenderParametros();
 
-  const avisoEjemplo = NOM.convenios.some(c => c.ejemplo)
-    ? `<div class="alerta al-warn"><span>⚠</span><span>Hay convenios con <strong>tablas salariales de ejemplo</strong>. Introduce las tablas vigentes publicadas en el boletín oficial en la pestaña <em>Convenios</em> antes de usar las nóminas.</span></div>` : "";
+  const alertasTxt = nAlertas && nomVista !== "obligaciones"
+    ? `<div class="alerta al-warn obl-rojo"><span>⚠</span><span>Tienes <strong>${nAlertas} aviso${nAlertas === 1 ? "" : "s"} importante${nAlertas === 1 ? "" : "s"}</strong> (plazos o cambios de convenio). <a href="#" onclick="event.preventDefault();nomIr('obligaciones')">Ver obligaciones y avisos</a></span></div>` : "";
+  const avisoEjemplo = alertasTxt + (NOM.convenios.some(c => c.ejemplo)
+    ? `<div class="alerta al-warn"><span>⚠</span><span>Hay convenios con <strong>tablas salariales de ejemplo</strong>. Introduce las tablas vigentes publicadas en el boletín oficial en la pestaña <em>Convenios</em> antes de usar las nóminas.</span></div>` : "");
 
   document.getElementById("app-content").innerHTML = `
     <div class="nom-sub">${subs.map(([k, l]) => `<button class="${k === nomVista ? "on" : ""}" onclick="nomIr('${k}')">${l}</button>`).join("")}</div>
@@ -813,6 +833,7 @@ function nomRenderResultado(r) {
   const ic = r.irpf.calculo;
   return `<div class="nom-card">
     <div class="section-title">${esc(r.empleado.nombre)} · ${MESES_NOM[r.mes - 1]} ${r.anio}</div>
+    ${(r.avisos || []).map(a => `<div class="alerta al-warn"><span>⚠</span><span>${esc(a)}</span></div>`).join("")}
     <div class="totales-grid" style="margin-bottom:10px">
       <div class="total-card"><div class="total-label">Líquido a percibir</div><div class="total-val">${eur(r.liquido)}</div></div>
       <div class="total-card"><div class="total-label">Coste empresa</div><div class="total-val">${eur(r.costeEmpresa)}</div></div>
@@ -934,6 +955,8 @@ function nomFormEmpleado() {
       <label>Categoría${sel("categoriaId", (conv?.categorias || []).map(c => [c.id, c.nombre]), e.categoriaId)}</label>
       <label>Grupo de cotización SS <small>(vacío = el de la categoría)</small><input name="grupoCotizacion" type="number" min="1" max="11" value="${esc(e.grupoCotizacion)}"/></label>
       <label>Fecha de alta en la empresa<input name="fechaAlta" type="date" value="${esc(e.fechaAlta)}"/></label>
+      <label>Fin del contrato <small>(temporales)</small><input name="fechaFinContrato" type="date" value="${esc(e.fechaFinContrato)}"/></label>
+      <label>Fecha de baja <small>(si ya se ha ido)</small><input name="fechaBaja" type="date" value="${esc(e.fechaBaja)}"/></label>
       <label>Fecha de antigüedad<input name="fechaAntiguedad" type="date" value="${esc(e.fechaAntiguedad)}"/></label>
       <label>${esc(conv?.antiguedad?.nombre || "Antigüedad")}: tramos reconocidos <small>(si no se calcula por fecha)</small><input name="periodosAntiguedad" type="number" min="0" value="${esc(e.periodosAntiguedad || 0)}"/></label>
       <label class="full">Clave de contrato (T-19)${sel("contratoClave", [["", "—"], ...CLAVES_CONTRATO.map(([k, d]) => [k, `${k} · ${d}`])], e.contratoClave)}</label>

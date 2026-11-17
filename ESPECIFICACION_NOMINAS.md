@@ -202,7 +202,29 @@ Código 99001925011986 · BOE-A-2024-15501 (26/7/2024) · tablas hasta 2026.
 
 ---
 
-## 9. Pendiente / a revisar
+## 9. Obligaciones y avisos (agenda laboral)
+
+Pestaña "Obligaciones y avisos" con un contador de avisos importantes también en la pestaña principal "Nóminas".
+
+- **Avisos**: plazos vencidos o en los próximos 10 días (rojo si faltan 3 días o menos), con "Marcar como hecho"; novedades del BOE; convenios sin tablas del año en curso o a punto de vencer; parámetros de cotización del año sin cargar; nóminas del mes anterior sin calcular; fichas incompletas (NIF, nº afiliación, clave de contrato, fecha de alta), modelo 145 sin rellenar y temporales sin fecha de fin. Los plazos anteriores al primer uso de la agenda no se dan por vencidos.
+- **Calendario** de los próximos 12 meses, agrupado por mes, con dónde se presenta (SILTRA/SLD, Sistema RED, Agencia Tributaria, SEPE, empresa) y casilla "hecho":
+  - Pago de nóminas: día 5 del mes siguiente (o hábil anterior).
+  - Seguros sociales del mes anterior (Sistema de Liquidación Directa): día 10 comunicar conceptos retributivos abonados (CRA) y pedir borrador; día 20 confirmar si se paga por cargo en cuenta (el cierre suele ser el 22, el 20 en algunos meses); penúltimo día natural, último día para confirmar; pago hasta fin de mes.
+  - Modelo 111: 1-20 de enero, abril, julio y octubre (15 si se domicilia); modelo 190: 1-31 de enero; certificados de retenciones antes de la campaña de la Renta (31 de marzo).
+  - Enero: revisar orden de cotización, SMI, IRPF, tarifa AT y tablas de los convenios; pedir modelo 145; calendario laboral.
+  - Por empleado: alta en RED antes del primer día (hasta 60 días antes); Contrat@ en 10 días desde la firma; preaviso 15 días antes del fin del contrato temporal; Certific@2 el día de la baja; baja en RED en 3 días naturales.
+  - Vencimiento de cada convenio (aviso 90 días antes y el día).
+  - Los plazos de Hacienda que caen en sábado, domingo o festivo nacional (incluido Viernes Santo) pasan al siguiente día hábil; lo que hay que hacer "antes de" se adelanta al hábil anterior.
+- **Exportar a calendario (.ics)** con alarmas 3 días antes y la víspera, para el móvil u Outlook.
+- **Resumen SILTRA** del mes: por trabajador (nº afiliación, grupo, clave de contrato, coeficiente de parcialidad, días, base CC, base AT/desempleo, horas extra, cuota trabajador y empresa) y cuotas por concepto, para comparar con el borrador del SLD. Exportable a CSV.
+- **Modelo 111** del trimestre: [01] nº de perceptores, [02] percepciones, [03] retenciones (rendimientos del trabajo dinerarios).
+- **Modelo 190** anual por perceptor (clave A): percepción íntegra, retenciones, gastos deducibles (cotizaciones del trabajador), percepciones exentas y datos del 145; CSV y certificado de retenciones imprimible.
+- **Detección de actualizaciones de convenios y normativa**: una vez al día, al abrir Nóminas, la app lee los sumarios del BOE (API de datos abiertos `https://www.boe.es/datosabiertos/api/boe/sumario/AAAAMMDD`, cabecera `Accept: application/json`) desde la última comprobación (máx. 60 días) y busca en los títulos: "enseñanza y formación no reglada"; "enseñanza privada de régimen general" o "sin ningún nivel concertado"; "normas legales de cotización"; "salario mínimo interprofesional"; "reglamento del impuesto sobre la renta"; "tarifa de primas". Cada coincidencia genera un aviso con enlace y "Marcar como revisado". Si el navegador no puede conectar, ofrece enlaces de búsqueda en el BOE. La app no cambia importes sola.
+- **Avisos en la nómina**: si el año no tiene tablas del convenio, si el convenio ha vencido o si faltan los parámetros de cotización del año.
+- Vigencias: X Convenio de no reglada hasta el 31/12/2027; XII Convenio de reglada hasta el **31/12/2026**.
+- **Guía** de qué se presenta en cada sitio (Sistema RED, SILTRA, SEPE, Agencia Tributaria y empresa).
+
+## 10. Pendiente / a revisar
 
 - Grupos de cotización por categoría: orientativos, ajustar con el alta de cada trabajador.
 - Mes sin productividad en el convenio B: se supone agosto.

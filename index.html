@@ -164,6 +164,16 @@
   .nom-scroll { overflow-x: auto; }
   .nom-edit input, .nom-edit select { min-width: 70px; padding: 6px; border: 0.5px solid var(--border2); border-radius: 6px; font-size: 12px; font-family: inherit; width: 100%; }
   .nom-edit td:first-child input { min-width: 150px; }
+  .obl-sub { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; }
+  .obl-sub button { padding: 6px 11px; border-radius: 8px; border: 0.5px solid var(--border2); background: var(--card); font-size: 12px; cursor: pointer; white-space: nowrap; font-family: inherit; color: var(--text2); }
+  .obl-sub button.on { background: var(--accent-light); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .obl-chip { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
+  .obl-badge { background: var(--red); color: white; border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 4px; }
+  .obl-rojo { background: var(--red-bg); color: var(--red); border-color: #e2a08a; }
+  .obl-check { font-size: 10px; color: var(--text2); display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .nom-acciones select { padding: 8px 10px; border: 0.5px solid var(--border2); border-radius: 8px; font-size: 13px; font-family: inherit; background: white; color: var(--text); }
+  .obl-lista { margin: 4px 0 0 18px; font-size: 12px; line-height: 1.55; display: grid; gap: 6px; }
+  .alerta a { color: inherit; font-weight: 600; }
   .btn-mini { padding: 6px 10px; border-radius: 6px; border: 0.5px solid var(--border2); background: var(--card); font-size: 12px; cursor: pointer; font-family: inherit; margin-top: 6px; }
 
   @media (min-width: 480px) {
@@ -215,6 +225,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="nominas.js"></script>
+<script src="obligaciones.js"></script>
 <script>
 // ── CONFIGURACIÓN AZURE ──────────────────────────────
 const MSAL_CONFIG = {
@@ -357,6 +368,7 @@ async function cargarApp() {
 
     document.getElementById("topbar-name").textContent = perfil.displayName || perfil.mail;
     document.getElementById("tabs").style.display = esAdminNominas(perfil.mail) ? "flex" : "none";
+    if (esAdminNominas(perfil.mail)) { nomCargar(); oblActualizarBadge(); }
     actualizarFechaTopbar();
 
     // Eventos hoy — fecha en hora local de Madrid
@@ -628,7 +640,7 @@ function cambiarVista(vista) {
   document.getElementById("tab-fichaje").classList.toggle("on", vista === "fichaje");
   document.getElementById("tab-nominas").classList.toggle("on", vista === "nominas");
   document.getElementById("app").classList.toggle("ancho", vista === "nominas");
-  if (vista === "nominas") renderNominas();
+  if (vista === "nominas") { renderNominas(); oblAlEntrar(); }
   else renderApp();
 }
 
